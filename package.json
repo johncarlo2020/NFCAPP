@@ -1,0 +1,17 @@
+{
+  "name": "rfid-scanner",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "setup": "node -e \"require('child_process').execSync(process.platform === 'win32' ? 'setup.bat' : 'bash setup.sh', {stdio: 'inherit'})\"",
+    "server": "cd server && npm start",
+    "install-all": "npm install && cd server && npm install"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}

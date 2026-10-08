@@ -1,0 +1,25 @@
+{
+  "name": "nfc-rfid-server",
+  "version": "1.0.0",
+  "description": "Node.js server for ACR122 RFID reader",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "install-prerequisites": "node install-prerequisites.js"
+  },
+  "keywords": [
+    "nfc",
+    "rfid",
+    "acr122"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "nfc-pcsc": "^0.8.0",
+    "pusher": "^5.3.4"
+  }
+}

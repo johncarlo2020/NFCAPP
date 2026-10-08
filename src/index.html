@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="styles.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RFID Scanner - ACR122</title>
+    <script type="module" src="/main.js" defer></script>
+  </head>
+
+  <body>
+    <main class="container">
+      <header class="app-header">
+        <h1>🔖 RFID Scanner</h1>
+        <p class="subtitle" id="subtitle">ACR122 NFC Reader</p>
+      </header>
+
+      <section id="mode-screen" class="mode-screen">
+        <h2>Select scan type</h2>
+        <div class="mode-group">
+          <h3>Registration</h3>
+          <div class="mode-buttons" id="registration-buttons"></div>
+        </div>
+        <div class="mode-group">
+          <h3>Station</h3>
+          <div class="mode-buttons" id="station-buttons"></div>
+        </div>
+      </section>
+
+      <div id="scan-screen" style="display: none;">
+        <div class="mode-bar">
+          <span class="mode-label" id="mode-label">-</span>
+          <button class="btn-secondary" id="change-mode">Change</button>
+        </div>
+
+        <div class="status-section">
+          <div class="status-card">
+            <div class="status-indicator" id="status-indicator">
+              <span class="status-dot"></span>
+              <span class="status-text" id="status-text">Connecting...</span>
+            </div>
+            <div class="reader-info">
+              <label for="reader-select">Reader:</label>
+              <select id="reader-select">
+                <option value="">Waiting for reader...</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="registration-section" id="registration-section" style="display: none;">
+          <div class="table-header">
+            <h3>Users without NFC</h3>
+            <button class="btn-secondary" id="refresh-users">Refresh</button>
+          </div>
+          <div class="table-wrap">
+            <table class="users-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Code</th>
+                  <th>Email</th>
+                  <th>Assign</th>
+                </tr>
+              </thead>
+              <tbody id="users-body">
+                <tr><td colspan="4" class="table-empty">Loading users...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <p class="action-message" id="action-message"></p>
+
+        <div class="scan-section" id="scan-section">
+          <div class="scan-prompt" id="scan-prompt">
+            <div class="scan-icon">📱</div>
+            <p>Place an RFID card on the reader</p>
+          </div>
+
+          <div class="card-display" id="card-display" style="display: none;">
+            <h2>Card Detected</h2>
+            <div class="card-info">
+              <div class="info-row">
+                <span class="info-label">UID:</span>
+                <span class="info-value uid-value" id="card-uid">-</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">ATR:</span>
+                <span class="info-value" id="card-atr">-</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">Type:</span>
+                <span class="info-value" id="card-type">-</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">Standard:</span>
+                <span class="info-value" id="card-standard">-</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">Scanned:</span>
+                <span class="info-value" id="card-timestamp">-</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-backdrop" id="assign-modal" style="display: none;">
+          <div class="modal">
+            <h2>Assign NFC card</h2>
+            <p class="modal-user" id="modal-user">-</p>
+            <div class="scan-icon" id="modal-icon">📱</div>
+            <p class="modal-status" id="modal-status">Tap the NFC card on the reader...</p>
+            <button class="btn-secondary" id="modal-cancel">Cancel</button>
+          </div>
+        </div>
+
+        <div class="history-section">
+          <h3>Scan History</h3>
+          <div class="history-list" id="history-list">
+            <p class="no-history">No scans yet</p>
+          </div>
+        </div>
+
+        <footer class="app-footer">
+          <button class="btn-secondary" id="clear-history">Clear History</button>
+          <span class="server-status" id="server-status">Server: <span id="server-port">localhost:3001</span></span>
+        </footer>
+      </div>
+    </main>
+  </body></html>
