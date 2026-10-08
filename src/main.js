@@ -1,5 +1,4 @@
 // RFID Scanner App
-const SERVER_URL = 'http://localhost:3001';
 
 const REGISTRATION_COUNT = 2;
 const STATION_COUNT = 4;
@@ -110,7 +109,7 @@ function selectMode(type, number) {
   selectedReader = localStorage.getItem(readerStorageKey()) || '';
   resetScanView();
   updateStatus('waiting', 'Connecting...');
-  connectToServer();
+  connectToReader();
 }
 
 function showModeScreen() {
@@ -172,15 +171,13 @@ function renderUsers(message) {
 async function loadUsers() {
   renderUsers('Loading users...');
   try {
-    const response = await fetch(`${SERVER_URL}/api/users`);
-    const body = await response.json().catch(() => ({}));
-    if (!response.ok || !body.success) throw new Error(body.message || `HTTP ${response.status}`);
-    users = body.data;
+    if (!window.__TAURI__) throw new Error('Open the desktop app to load users');
+    users = await window.__TAURI__.core.invoke('get_users');
     renderUsers();
   } catch (error) {
     console.error('Failed to load users:', error);
     users = [];
-    renderUsers(`Failed to load users: ${error.message}`);
+    renderUsers(`Failed to load users:     ${error?.message || error}`);
   }
 }
 
@@ -215,10 +212,7 @@ async function assignScannedCard(card) {
   const user = assigningUser;
   assignBusy = true;
   setModalStatus('⏳', `Sending ${card.uid}...`);
-  const ok = await postToServer('/api/registration/assign', {
-    nfcCode: card.uid,
-    userId: user.id,
-  });
+  const ok = await sendToPusher('assign_nfc', { nfcCode: card.uid, userId: user.id });
   if (!ok.success) {
     assignBusy = false;
     setModalStatus('❌', `Failed: ${ok.message}. Tap the card again to retry.`, 'action-error');
@@ -238,29 +232,22 @@ async function assignScannedCard(card) {
 
 // ---- Server communication ----
 
-async function postToServer(path, payload) {
+// Sends to Pusher through the desktop app (the Pusher secret stays in Rust)
+async function sendToPusher(command, args) {
   try {
-    const response = await fetch(`${SERVER_URL}${path}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    const body = await response.json().catch(() => ({}));
-    if (!response.ok || !body.success) {
-      throw new Error(body.message || `HTTP ${response.status}`);
-    }
+    if (!window.__TAURI__) throw new Error('Open the desktop app to send data');
+    await window.__TAURI__.core.invoke(command, args);
     return { success: true };
   } catch (error) {
-    return { success: false, message: error.message };
+    return { success: false, message: String(error) };
   }
 }
-
 function showActionMessage(text, success) {
   actionMessage.textContent = text;
   actionMessage.className = 'action-message ' + (success ? 'action-success' : 'action-error');
 }
 
-async function connectToServer() {
+async function connectToReader() {
   const generation = ++nativeGeneration;
   if (nativeUnlisten) nativeUnlisten();
   nativeUnlisten = null;
@@ -351,10 +338,7 @@ function handleCard(cardData) {
     showActionMessage('UID read directly from the USB reader', true);
     return;
   }
-  postToServer('/api/station/scan', {
-    nfcCode: cardData.uid,
-    stationId: mode.number,
-  }).then(result => {
+  sendToPusher('station_scan', { nfcCode: cardData.uid, stationId: mode.number }).then(result => {
     if (result.success) showActionMessage(`Sent ${cardData.uid} from Station ${mode.number}`, true);
     else showActionMessage(`Failed: ${result.message}`, false);
   });
