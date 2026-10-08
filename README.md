@@ -1,322 +1,228 @@
-# 🔖 RFID Scanner - ACR122 Desktop App
+# RFID Scanner — ACR122U
 
-A powerful desktop application built with Tauri for scanning RFID/NFC cards using the ACR122 reader. The app features a modern web interface with real-time card detection and automatic server management.
+Desktop NFC reader app built with Tauri, Rust, and vanilla JavaScript. Reader
+communication runs inside the app through the operating system's PC/SC interface.
+**Deployment target: Windows with an ACR122U USB reader.** macOS is the current
+development machine; Windows hardware testing is still pending.
+No Node.js server or Pusher credentials are needed for **Device test**.
 
-## ✨ Features
+For a Windows computer running the packaged app:
 
-- 🚀 **Auto-Start Server**: Node.js RFID server automatically launches with the app
-- 📱 **Real-Time Scanning**: Live card detection with Server-Sent Events (SSE)
-- 🎨 **Modern UI**: Beautiful, responsive interface with dark theme
-- 📊 **Scan History**: Automatic tracking of scanned cards with localStorage persistence
-- 🔌 **Hot Plug Support**: Automatically detects when reader is connected/disconnected
-- 💾 **Card Information**: Displays UID, ATR, card type, and standard information
-- 🖥️ **Cross-Platform**: Works on Windows, macOS, and Linux
+1. Manually download **MSI Installer for PC/SC Driver — Windows** from the
+   [ACS driver page](https://www.acs.com.hk/en/driver/3/acr122u-usb-nfc-reader/),
+   extract the archive, and run its installer for your computer's architecture.
+2. Connect the ACR122U and check **Device Manager → Smart card readers** for the
+   reader and any driver errors.
+3. Ensure the Windows **Smart Card** service is available. If needed, use the
+   administrator PowerShell command below from this source checkout.
+4. Install/open the packaged RFID Scanner app, select **Device test**, and tap a
+   card to verify UID and ATR.
 
-## 📋 Prerequisites
+The Windows app needs the WebView2 runtime. End users do not need Node.js, Rust,
+Python, or Visual Studio Build Tools for native scanning. Registration/station
+reporting still depends on the legacy API described below.
 
-Before you begin, ensure you have the following installed:
+## Install the reader driver
 
-### Required Software
+The reader driver and PC/SC service are operating-system components. They are
+installed separately from the app, with administrator privileges where required.
+Our scripts install prerequisites; use **Device test** afterward to verify an
+actual card read. A completed installer alone does not confirm device detection.
 
-1. **Node.js** (v16 or higher)
-   - Download from [nodejs.org](https://nodejs.org/)
-   - Verify installation: `node --version`
+Official source: [ACS ACR122U drivers](https://www.acs.com.hk/en/driver/3/acr122u-usb-nfc-reader/).
+ACS currently lists macOS driver **1.1.11.1**, Windows driver **4.2.8.0**, and
+Linux driver **1.1.11**. Downloads and supported systems can change; check that
+page for compatibility with your OS and processor.
 
-2. **Rust** (for Tauri)
-   - Install from [rustup.rs](https://rustup.rs/)
-   - Verify installation: `rustc --version`
+### Windows
 
-3. **ACR122 RFID Reader**
-   - Connect via USB before running the app
+Connect the reader and open **PowerShell as Administrator**:
 
-### Platform-Specific Requirements
+```powershell
+powershell -NoProfile -File .\scripts\install-reader-driver.ps1
+```
 
-#### Windows
+This enables demand-start and starts the Windows **Smart Card** service
+(`SCardSvr`). It does not download a driver or assert that one is already installed.
+If Windows does not detect the reader, download **PC/SC Drivers — Windows** from
+ACS, extract the archive, and install its INF packages:
 
-- **Python 3** and **Visual Studio Build Tools** with the **Desktop development with C++** workload (required to compile the `nfc-pcsc` native module)
+```powershell
+powershell -NoProfile -File .\scripts\install-reader-driver.ps1 -DriverPath "C:\Downloads\ACS-drivers"
+```
 
-- **ACR122U Driver**
-  - Download from [ACS Driver Page](https://www.acs.com.hk/en/driver/3/acr122u-usb-nfc-reader/)
-  - Install before first use
+Supply only the extracted driver folder appropriate for your machine's
+architecture. The script uses Microsoft's
+[PnPUtil](https://learn.microsoft.com/en-us/windows-hardware/drivers/devtest/pnputil-examples)
+and reports installation errors or reboot requests. Alternatively, run ACS's
+**MSI Installer for PC/SC Driver** manually. If PowerShell execution is restricted
+by your organization, use the approved installation process.
 
-#### macOS
+### macOS
 
-- **Xcode Command Line Tools**
-  ```bash
-  xcode-select --install
-  ```
+Download **PC/SC Driver Installer — macOS** from the
+[official ACS driver page](https://www.acs.com.hk/en/driver/3/acr122u-usb-nfc-reader/)
+and extract the archive. Double-click its `.pkg` or `.mpkg` installer and follow
+the ACS instructions. Alternatively, install the manually downloaded package
+from the project directory:
 
-- **PC/SC Lite** (via Homebrew)
-  ```bash
-  brew install pcsc-lite
-  ```
-
-#### Linux
-
-- **PC/SC Daemon**
-  ```bash
-  # Ubuntu/Debian
-  sudo apt-get install pcscd libpcsclite-dev
-  sudo systemctl start pcscd
-  sudo systemctl enable pcscd
-
-  # Fedora/RHEL
-  sudo dnf install pcsc-lite pcsc-lite-devel
-  
-  # Arch Linux
-  sudo pacman -S pcsclite
-  ```
-
-## 🚀 Quick Start
-
-### Automated Setup (Recommended)
-
-#### Windows
 ```bash
+bash scripts/install-reader-driver.sh --package "$HOME/Downloads/path/to/ACS.pkg"
+```
+
+Use the actual filename from the archive. The script uses Apple's `installer`
+tool through `sudo`; it does not download the driver. If the archive contains no
+package installer, follow the included ACS instructions instead.
+
+macOS already provides the PC/SC framework used by this app. Installing Homebrew
+`pcsc-lite` is not a substitute for the ACS reader driver. Reconnect the reader
+after installation and reboot if the installer requests it. If macOS prompts to
+allow the USB accessory, allow the reader to connect.
+
+After manual installation, run `npm install` and `npm run dev`, then select
+**Device test**. To use full setup with a downloaded package, run
+`bash setup.sh --package /path/to/ACS.pkg`.
+
+### Linux
+
+```bash
+bash scripts/install-reader-driver.sh
+```
+
+The script installs the ACS CCID driver, PC/SC libraries, and diagnostic tools
+using the detected package manager, then enables `pcscd.socket` on systemd systems.
+It supports these package sets:
+
+| Distribution | Packages |
+| --- | --- |
+| Debian / Ubuntu | `pcscd`, `libpcsclite-dev`, `libacsccid1`, `pcsc-tools` |
+| Fedora | `pcsc-lite`, `pcsc-lite-devel`, `pcsc-lite-acsccid`, `pcsc-tools` |
+| Arch | `pcsclite`, `acsccid`, `pcsc-tools` |
+
+Package references: [Ubuntu](https://packages.ubuntu.com/libacsccid1),
+[Fedora](https://packages.fedoraproject.org/pkgs/pcsc-lite-acsccid/pcsc-lite-acsccid/),
+[Arch](https://archlinux.org/packages/extra/x86_64/acsccid/).
+Other distributions or systems without systemd require manual service setup.
+Missing packages or service failures stop the script with an error.
+
+## Build and test the app on Windows
+
+Source development requires Node.js/npm, Rust/Cargo, and the
+[Tauri system prerequisites](https://v2.tauri.app/start/prerequisites/) for your OS.
+Windows Rust builds need the MSVC toolchain; macOS builds need Xcode Command Line
+Tools. Driver installation does not install these development tools.
+
+| Use case | Python 3 | Visual Studio C++ Build Tools |
+| --- | --- | --- |
+| Build the native Tauri app on Windows | No | Yes, Desktop development with C++ workload and Windows SDK |
+| Build the native Tauri app on macOS | No | No; use Xcode Command Line Tools |
+| Run the packaged native app / install its reader driver | No | No |
+| Compile the legacy server's `nfc-pcsc` native module on Windows | Yes | Yes |
+
+Windows development also requires the WebView2 runtime and Rust's MSVC toolchain.
+Python is required by the legacy server's `node-gyp` build, not the native reader
+implementation. See [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/)
+and [node-gyp requirements](https://github.com/nodejs/node-gyp#on-windows).
+
+From Command Prompt in the project directory:
+
+```cmd
 setup.bat
-```
-
-#### macOS/Linux
-```bash
-chmod +x setup.sh
-./setup.sh
-```
-
-The setup script will:
-1. Check Node.js installation
-2. Install Tauri app dependencies
-3. Install RFID prerequisites
-4. Install server dependencies
-
-### Manual Setup
-
-1. **Install Tauri dependencies**
-   ```bash
-   npm install
-   ```
-
-2. **Run the prerequisites installer** (installs platform prerequisites before server dependencies)
-   ```bash
-   cd server
-   npm run install-prerequisites
-   cd ..
-   ```
-
-## 🎛️ Scan Modes & Pusher
-
-On launch, choose a scan type: **Registration 1–2** or **Station 1–4**, then pick which connected reader this screen uses.
-
-- **Registration**: select a user, scan a card, press *Assign to user*. Pusher event `nfc-registration` is sent with `{ nfc_code, user_id }`.
-- **Station**: every scan is sent automatically as `nfc-station` with `{ nfc_code, station_id }`.
-
-Copy `server/.env.example` to `server/.env` and fill in the `PUSHER_*` credentials (events go to channel `nfc` by default). Set `USERS_API_URL` and `API_SECRET` there too; the server fetches the user list (sending `X-API-Secret`) so the secret never reaches the frontend.
-
-## 🎮 Usage
-
-### Development Mode
-
-Start the app in development mode with hot reload:
-
-```bash
 npm run dev
-# or
-npm run tauri dev
 ```
 
-The app will:
-1. Automatically start the Node.js RFID server on port 3001
-2. Open the Tauri window with the web interface
-3. Wait for ACR122 reader connection
+Build a Windows installer on a Windows development machine with `npm run build`.
+Find the installer under `src-tauri\target\release\bundle\`. The current
+macOS build checks do not validate a Windows executable.
 
-### Running Server Separately (Optional)
+On Linux, `bash setup.sh` installs reader prerequisites followed by app npm
+dependencies. On macOS, provide `--package /path/to/ACS.pkg`, or install the
+driver manually and run `npm install` separately. On Windows,
+`setup.bat` installs app dependencies and prints the administrator PowerShell
+command for driver setup. Neither installs legacy server dependencies.
 
-If you want to run the server independently:
+1. Connect the ACR122U reader.
+2. Select **Device test** and choose the reader.
+3. Tap a compatible NFC card; verify UID and ATR appear.
+4. Remove and retap the card; verify another scan is recorded.
+5. Disconnect and reconnect the USB reader; verify connection status updates.
+
+The app reads identifiers only and does not write to cards. UIDs are uppercase
+hexadecimal without separators. The current UI's `NFC` and `PC/SC` labels are
+generic; card-family identification is not implemented. History keeps the most
+recent 20 entries in localStorage.
+
+To check PC/SC detection without opening the window:
 
 ```bash
-npm run server
+cargo run --manifest-path src-tauri/Cargo.toml --example reader_probe
+# After Cargo dependencies are available, the script can run the probe offline:
+bash scripts/install-reader-driver.sh --check
 ```
 
-### Building for Production
+Windows equivalent:
 
-Create a production build:
+```powershell
+powershell -NoProfile -File .\scripts\install-reader-driver.ps1 -Check
+```
+
+The check mode does not install drivers or change services. It requires Rust and
+previously downloaded Cargo dependencies. The probe distinguishes a service
+failure from an available service with no connected readers; it does not read a
+card. Use **Device test** for the full card-read check.
+
+## Troubleshooting detection
+
+- **PC/SC service unavailable:** connect the reader, install its driver, and rerun
+  the probe. On Windows, run the administrator service script. On Linux, check
+  `systemctl status pcscd.socket`. On macOS, use the ACS installer instructions;
+  do not launch a separate Homebrew daemon for this app.
+- **Service available, no readers:** reconnect the reader, check the USB cable or
+  adapter, allow USB accessory access if prompted, and verify the OS sees it.
+- **Reader visible, UID fails:** remove and retap a compatible card. Close other
+  NFC utilities that might hold the reader. The status displays the reader error.
+
+The development machine's probe reported **Smart card resource manager is not
+running** before driver setup. Physical scanning and driver installation on
+Windows/Linux have not yet been verified.
+
+## Registration and station reporting (legacy API)
+
+The app includes Registration 1–2 and Station 1–4. Both now receive scans from
+Rust, but fetching users and reporting events still use `http://localhost:3001`.
+The app does not automatically launch the Node.js server.
+
+For these workflows only, install server dependencies and run it separately:
 
 ```bash
-npm run build
-# or
-npm run tauri build
+cd server
+npm install
+npm start
 ```
 
-The built application will be in `src-tauri/target/release/`.
+Copy `server/.env.example` to `server/.env` and configure `PUSHER_APP_ID`,
+`PUSHER_KEY`, `PUSHER_SECRET`, `PUSHER_CLUSTER`, `USERS_API_URL`, and `API_SECRET`.
+The legacy server uses `fetch` and `process.loadEnvFile`, so use a Node.js release
+that supports both APIs. The users proxy sends the secret in `X-API-Secret`.
 
-## 📁 Project Structure
+Registration: select **Assign** for a user, then tap the card. The API publishes
+`nfc-registration` with `{ nfc_code, user_id }`. Station scans publish
+`nfc-station` with `{ nfc_code, station_id }`. Success currently confirms Pusher
+accepted the event, not that the receiving system saved the operation.
 
-```
-rfid-scanner/
-├── src/                    # Web interface (HTML, CSS, JS)
-│   ├── index.html         # Main UI
-│   ├── main.js            # Frontend logic
-│   └── styles.css         # Styles
-├── server/                # Node.js RFID server
-│   ├── server.js          # Express server with NFC handling
-│   ├── install-prerequisites.js
-│   └── package.json
-├── src-tauri/             # Tauri backend (Rust)
-│   ├── src/
-│   │   ├── main.rs
-│   │   └── lib.rs         # Auto-start server logic
-│   ├── tauri.conf.json    # Tauri configuration
-│   └── Cargo.toml
-├── setup.bat              # Windows setup script
-├── setup.sh               # macOS/Linux setup script
-└── package.json
-```
+The legacy server still initializes its own NFC worker; avoid concurrent reader
+access while testing. Its API has unrestricted CORS, no authentication, and no
+explicit loopback binding. It sends scan/user identifiers to external services;
+credentials stay on the server. Moving these integrations into Rust is pending.
 
-## 🔧 How It Works
+## Project files
 
-### Architecture
+- `src/`: desktop interface and scan history.
+- `src-tauri/src/nfc.rs`: native reader monitoring and UID command.
+- `src-tauri/examples/reader_probe.rs`: PC/SC reader diagnostic.
+- `scripts/install-reader-driver.sh`: macOS/Linux installation and checks.
+- `scripts/install-reader-driver.ps1`: Windows driver/service setup and checks.
+- `server/`: legacy users/Pusher API and NFC worker.
 
-1. **Tauri App (Rust)**: Desktop application shell
-   - Launches Node.js server on startup
-   - Manages server process lifecycle
-   - Displays web interface
-
-2. **Node.js Server**: RFID communication layer
-   - Uses `nfc-pcsc` library for ACR122 communication
-   - Exposes REST API and SSE endpoints
-   - Runs on `http://localhost:3001`
-
-3. **Web Interface**: User interaction layer
-   - Connects to server via EventSource (SSE)
-   - Displays real-time card information
-   - Stores scan history in localStorage
-
-### API Endpoints
-
-- `GET /api/status` - Get reader and server status
-- `GET /api/last-scan` - Get last scanned card data
-- `GET /api/events` - Server-Sent Events stream for real-time updates
-- `GET /health` - Health check endpoint
-
-### Event Types
-
-The server sends real-time events:
-- `connected` - Client connected to server
-- `reader_connected` - ACR122 reader detected
-- `reader_disconnected` - ACR122 reader removed
-- `card_detected` - RFID card scanned
-- `card_removed` - Card removed from reader
-- `error` - Error occurred
-
-## 🛠️ Troubleshooting
-
-### Server Won't Start
-
-**Issue**: "Failed to start server" error
-
-**Solutions**:
-1. Ensure Node.js is installed: `node --version`
-2. Install server dependencies: `cd server && npm install`
-3. Check if port 3001 is available
-4. Run server manually to see errors: `cd server && npm start`
-
-### Reader Not Detected
-
-**Issue**: "Waiting for reader..." message persists
-
-**Solutions**:
-1. **Windows**: Install ACR122U driver from ACS website
-2. **Linux**: Ensure pcscd service is running:
-   ```bash
-   sudo systemctl status pcscd
-   sudo systemctl start pcscd
-   ```
-3. Reconnect the USB reader
-4. Try a different USB port
-5. Check reader with: `pcsc_scan` (install via `apt-get install pcsc-tools`)
-
-### Build Errors (Windows)
-
-**Issue**: Node-gyp or native module build errors
-
-**Solutions**:
-1. Install Python 3 and ensure it is available to `node-gyp`.
-2. Install Visual Studio Build Tools with the **Desktop development with C++** workload.
-3. Restart your terminal/IDE and rerun `setup.bat`.
-
-The deprecated `windows-build-tools` npm package and a global `node-gyp` install are not required.
-
-### Permission Errors (Linux)
-
-**Issue**: Cannot access PC/SC daemon
-
-**Solutions**:
-1. Add your user to the `pcscd` group:
-   ```bash
-   sudo usermod -a -G pcscd $USER
-   ```
-2. Restart or log out and back in
-
-## 📝 Card Data Format
-
-When a card is scanned, you'll receive:
-
-```json
-{
-  "uid": "04:A1:B2:C3:D4:E5:F6",
-  "atr": "3B8F8001804F0CA0000003060300030000000068",
-  "type": "TAG_ISO_14443_3",
-  "standard": "ISO_14443_3",
-  "timestamp": "2026-08-31T10:30:45.123Z"
-}
-```
-
-## 🔐 Security Notes
-
-- The server runs on `localhost:3001` only (not exposed to network)
-- No sensitive data is transmitted over the internet
-- Scan history is stored locally in browser localStorage
-- RFID data is handled in-memory only
-
-## 📦 Dependencies
-
-### Main Technologies
-
-- **Tauri v2**: Desktop application framework
-- **Node.js**: Server runtime
-- **Express**: Web server framework
-- **nfc-pcsc**: NFC/RFID reader library
-- **CORS**: Cross-origin resource sharing
-
-### Development Tools
-
-- **Rust**: Tauri backend language
-- **Cargo**: Rust package manager
-- **npm**: Node.js package manager
-
-## 🤝 Contributing
-
-Contributions are welcome! Feel free to:
-- Report bugs
-- Suggest features
-- Submit pull requests
-
-## 📄 License
-
-MIT License - Feel free to use this project for personal or commercial purposes.
-
-## 🆘 Support
-
-For issues and questions:
-1. Check the [Troubleshooting](#-troubleshooting) section
-2. Review [nfc-pcsc documentation](https://github.com/pokusew/nfc-pcsc)
-3. Check [Tauri documentation](https://tauri.app)
-
-## 🙏 Acknowledgments
-
-- [Tauri](https://tauri.app/) - Application framework
-- [nfc-pcsc](https://github.com/pokusew/nfc-pcsc) - NFC library
-- [ACS](https://www.acs.com.hk/) - ACR122 reader manufacturer
-
----
-
-Made with ❤️ using Tauri + Node.js
+Run `npm run build` to build the desktop app. Reader communication is compiled
+into it; target computers still need their OS reader driver and PC/SC service.

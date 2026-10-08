@@ -1,90 +1,25 @@
 #!/bin/bash
-
-echo "========================================"
-echo "RFID Scanner Setup - ACR122"
-echo "========================================"
-echo ""
-
-echo "[1/4] Checking Node.js installation..."
-if ! command -v node &> /dev/null; then
-    echo "ERROR: Node.js is not installed!"
-    echo "Please install Node.js from https://nodejs.org/"
-    exit 1
+set -euo pipefail
+cd "$(dirname "${BASH_SOURCE[0]}")"
+if [ "${1:-}" = '--help' ]; then
+    echo 'Usage: bash setup.sh [--package /path/to/ACS.pkg]'
+    echo 'Installs native reader prerequisites and app dependencies. Does not install the legacy server.'
+    exit 0
 fi
-node --version
-echo "✓ Node.js is installed"
-echo ""
-
-echo "[2/4] Installing Tauri app dependencies..."
+if [ "$#" -ne 0 ]; then
+    if [ "$#" -ne 2 ] || [ "$1" != '--package' ]; then
+        echo 'Usage: bash setup.sh [--package /path/to/ACS.pkg]' >&2
+        echo 'For a check without installation, use scripts/install-reader-driver.sh --check.' >&2
+        exit 2
+    fi
+fi
+echo 'RFID Scanner Setup - ACR122 (native PC/SC)'
+for dependency in node npm cargo; do
+    command -v "$dependency" >/dev/null 2>&1 || {
+        echo "Missing prerequisite: $dependency. Install Node.js and Rust before setup." >&2
+        exit 1
+    }
+done
+bash scripts/install-reader-driver.sh "$@"
 npm install
-if [ $? -ne 0 ]; then
-    echo "ERROR: Failed to install Tauri dependencies"
-    exit 1
-fi
-echo "✓ Tauri dependencies installed"
-echo ""
-
-echo "[3/4] Installing RFID prerequisites..."
-
-# Detect OS
-OS="$(uname -s)"
-case "${OS}" in
-    Linux*)
-        echo "Detected Linux - installing pcscd..."
-        if command -v apt-get &> /dev/null; then
-            sudo apt-get update
-            sudo apt-get install -y pcscd libpcsclite-dev
-            sudo systemctl start pcscd
-            sudo systemctl enable pcscd
-        elif command -v dnf &> /dev/null; then
-            sudo dnf install -y pcsc-lite pcsc-lite-devel
-            sudo systemctl start pcscd
-            sudo systemctl enable pcscd
-        elif command -v pacman &> /dev/null; then
-            sudo pacman -S --noconfirm pcsclite
-            sudo systemctl start pcscd
-            sudo systemctl enable pcscd
-        else
-            echo "WARNING: Could not detect package manager. Please install pcscd manually."
-        fi
-        ;;
-    Darwin*)
-        echo "Detected macOS - installing pcsc-lite via Homebrew..."
-        if ! command -v brew &> /dev/null; then
-            echo "WARNING: Homebrew is not installed. Please install from https://brew.sh/"
-        else
-            brew install pcsc-lite
-        fi
-        ;;
-    *)
-        echo "Unknown OS: ${OS}"
-        ;;
-esac
-echo ""
-
-echo "[4/4] Installing server dependencies..."
-cd server
-npm install
-if [ $? -ne 0 ]; then
-    echo "ERROR: Failed to install server dependencies"
-    cd ..
-    exit 1
-fi
-cd ..
-echo "✓ Server dependencies installed"
-echo ""
-
-echo "========================================"
-echo "Setup Complete!"
-echo "========================================"
-echo ""
-echo "IMPORTANT NOTES:"
-echo ""
-echo "1. Make sure your ACR122 RFID reader is connected via USB"
-echo ""
-echo "2. To start the application:"
-echo "   - Run: npm run tauri dev"
-echo ""
-echo "3. To build for production:"
-echo "   - Run: npm run tauri build"
-echo ""
+echo 'Setup finished. Connect the reader, run npm run dev, and select Device test.'

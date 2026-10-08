@@ -5,7 +5,9 @@ const REGISTRATION_COUNT = 2;
 const STATION_COUNT = 4;
 
 // State
-let eventSource = null;
+let nativeUnlisten = null;
+let nativeCards = {};
+let nativeGeneration = 0;
 let scanHistory = [];
 let mode = null; // { type: 'registration' | 'station', number: n }
 let readers = [];
@@ -60,6 +62,7 @@ function initializeElements() {
 }
 
 function setupEventListeners() {
+  document.querySelector('#device-test').addEventListener('click', () => selectMode('device', 0));
   clearHistoryBtn.addEventListener('click', clearHistory);
   document.querySelector("#change-mode").addEventListener('click', showModeScreen);
   readerSelect.addEventListener('change', () => {
@@ -93,7 +96,7 @@ function readerStorageKey() {
 
 function selectMode(type, number) {
   mode = { type, number };
-  const label = `${type === 'registration' ? 'Registration' : 'Station'} ${number}`;
+  const label = type === 'device' ? 'Device test' : `${type === 'registration' ? 'Registration' : 'Station'} ${number}`;
   modeLabel.textContent = label;
   subtitle.textContent = label;
   modeScreen.style.display = 'none';
@@ -112,10 +115,10 @@ function selectMode(type, number) {
 
 function showModeScreen() {
   mode = null;
-  if (eventSource) {
-    eventSource.close();
-    eventSource = null;
-  }
+  nativeGeneration++;
+  if (nativeUnlisten) nativeUnlisten();
+  nativeUnlisten = null;
+  nativeCards = {};
   scanScreen.style.display = 'none';
   modeScreen.style.display = 'block';
   subtitle.textContent = 'ACR122 NFC Reader';
@@ -257,75 +260,40 @@ function showActionMessage(text, success) {
   actionMessage.className = 'action-message ' + (success ? 'action-success' : 'action-error');
 }
 
-function connectToServer() {
-  if (!mode) return;
-  console.log('Connecting to server...');
-
-  fetch(`${SERVER_URL}/health`)
-    .then(response => response.json())
-    .then(data => {
-      console.log('Server is online:', data);
-      if (mode) startEventStream();
-    })
-    .catch(error => {
-      console.error('Failed to connect to server:', error);
-      updateStatus('disconnected', 'Server offline');
-      setTimeout(connectToServer, 5000);
+async function connectToServer() {
+  const generation = ++nativeGeneration;
+  if (nativeUnlisten) nativeUnlisten();
+  nativeUnlisten = null;
+  nativeCards = {};
+  const tauri = window.__TAURI__;
+  if (!tauri) {
+    updateStatus('error', 'Open the desktop app to access the USB reader');
+    return;
+  }
+  try {
+    const unlisten = await tauri.event.listen('nfc-status', ({ payload }) => {
+      if (generation === nativeGeneration && mode) handleNativeStatus(payload);
     });
+    if (generation !== nativeGeneration || !mode) { unlisten(); return; }
+    nativeUnlisten = unlisten;
+    const status = await tauri.core.invoke('get_nfc_status');
+    if (generation === nativeGeneration && mode) handleNativeStatus(status);
+  } catch (error) {
+    updateStatus('error', `Cannot connect to reader service: ${error}`);
+  }
 }
 
-function startEventStream() {
-  if (eventSource) {
-    eventSource.close();
-  }
-
-  eventSource = new EventSource(`${SERVER_URL}/api/events`);
-
-  eventSource.onopen = () => {
-    console.log('EventSource connected');
-  };
-
-  eventSource.onmessage = (event) => {
-    try {
-      const data = JSON.parse(event.data);
-      handleServerEvent(data);
-    } catch (error) {
-      console.error('Failed to parse event data:', error);
+function handleNativeStatus(status) {
+  setReaders(status.readers);
+  if (status.error) updateStatus('error', status.error);
+  const cards = status.cards || {};
+  for (const [reader, card] of Object.entries(cards)) {
+    if (!nativeCards[reader] && isSelectedReader(reader)) {
+      handleCard({ ...card, type: 'NFC', standard: 'PC/SC', timestamp: new Date().toISOString() });
     }
-  };
-
-  eventSource.onerror = (error) => {
-    console.error('EventSource error:', error);
-    updateStatus('disconnected', 'Connection lost');
-    eventSource.close();
-    eventSource = null;
-    setTimeout(connectToServer, 5000);
-  };
-}
-
-function handleServerEvent(event) {
-  console.log('Server event:', event);
-
-  switch (event.type) {
-    case 'connected':
-    case 'reader_connected':
-    case 'reader_disconnected':
-      setReaders(event.readers || []);
-      break;
-
-    case 'card_detected':
-      if (isSelectedReader(event.data.reader)) handleCard(event.data);
-      break;
-
-    case 'card_removed':
-      if (mode.type === 'station' && isSelectedReader(event.reader)) hideCardDisplay();
-      break;
-
-    case 'error':
-      console.error('Reader error:', event.message);
-      updateStatus('error', 'Error: ' + event.message);
-      break;
   }
+  if (nativeCards[selectedReader] && !cards[selectedReader]) hideCardDisplay();
+  nativeCards = cards;
 }
 
 // ---- Readers ----
@@ -379,6 +347,10 @@ function handleCard(cardData) {
   currentCard = cardData;
   displayCard(cardData);
   addToHistory(cardData);
+  if (mode.type === 'device') {
+    showActionMessage('UID read directly from the USB reader', true);
+    return;
+  }
   postToServer('/api/station/scan', {
     nfcCode: cardData.uid,
     stationId: mode.number,
@@ -481,7 +453,5 @@ function loadHistory() {
 
 // Cleanup on unload
 window.addEventListener('beforeunload', () => {
-  if (eventSource) {
-    eventSource.close();
-  }
+  if (nativeUnlisten) nativeUnlisten();
 });

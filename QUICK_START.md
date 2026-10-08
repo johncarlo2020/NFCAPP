@@ -1,129 +1,67 @@
-# 🚀 Quick Start Guide
+# Quick start — Windows native reader test
 
-Get your RFID Scanner up and running in 5 minutes!
+The deployment target is **Windows with an ACR122U USB NFC reader**.
 
-## Step 1: Check Requirements ✅
+## Run the packaged app
 
-Before starting, make sure you have:
+1. Manually download the Windows **MSI Installer for PC/SC Driver** from the
+   [ACS driver page](https://www.acs.com.hk/en/driver/3/acr122u-usb-nfc-reader/),
+   extract it, and run the appropriate installer.
+2. Connect the reader; check Windows Device Manager for driver errors.
+3. Install/open RFID Scanner, with the WebView2 runtime available.
+4. Select **Device test** and tap a card.
 
-- [ ] **Node.js installed** (v16+)
-  - Test: Open terminal and run `node --version`
-  - If not installed: [Download Node.js](https://nodejs.org/)
+Python, Visual Studio Build Tools, Rust, and Node.js are not required on a
+computer that only runs the packaged app's native scanning workflow.
 
-- [ ] **Rust installed** (for Tauri)
-  - Test: Run `rustc --version`
-  - If not installed: [Install Rust](https://rustup.rs/)
+## Develop or build on Windows
 
-- [ ] **ACR122 RFID Reader** connected via USB
+Install Node.js/npm, Rust's MSVC toolchain, Visual Studio Build Tools with the
+**Desktop development with C++** workload and Windows SDK, and WebView2. See
+[Tauri prerequisites](https://v2.tauri.app/start/prerequisites/#windows).
+**Python is not required for the native app.**
 
-- [ ] **Windows only: Python 3 and Visual Studio Build Tools**
-  - The server's `nfc-pcsc` dependency compiles a native module using `node-gyp`.
-  - Install Python 3 and Visual Studio Build Tools with the **Desktop development with C++** workload before running setup.
-
-## Step 2: Run Setup 🔧
-
-### Windows
-
-Open Command Prompt or PowerShell in the project folder:
+From Command Prompt in the project folder:
 
 ```cmd
 setup.bat
-```
-
-### macOS / Linux
-
-Open Terminal in the project folder:
-
-```bash
-chmod +x setup.sh
-./setup.sh
-```
-
-Wait for the setup to complete (2-5 minutes).
-
-## Step 3: Install RFID Driver (Windows Only) 🪟
-
-If you're on Windows, download and install the ACR122U driver:
-
-👉 [Download ACR122U Driver](https://www.acs.com.hk/en/driver/3/acr122u-usb-nfc-reader/)
-
-## Step 4: Start the App 🎯
-
-```bash
 npm run dev
 ```
 
-This will:
-1. ✅ Start the Node.js RFID server
-2. ✅ Launch the Tauri desktop app
-3. ✅ Open the scanning interface
+If the Smart Card service needs setup, open PowerShell as Administrator and run:
 
-## Step 5: Scan Your First Card 📱
-
-1. The app window will open
-2. You should see "Reader connected" status (green dot)
-3. Place an RFID card on the ACR122 reader
-4. Watch the card information appear on screen!
-
-## Common Issues & Quick Fixes 🔧
-
-### "Server offline" message
-
-**Fix:** Make sure port 3001 is not in use:
-```bash
-# Test if server is accessible
-curl http://localhost:3001/health
+```powershell
+powershell -NoProfile -File .\scripts\install-reader-driver.ps1
 ```
 
-### "Waiting for reader..." message
+For manually downloaded and extracted INF drivers, supply
+`-DriverPath "C:\Downloads\ACS-drivers"`. See [README.md](README.md#install-the-reader-driver).
 
-**Fix:**
-1. Unplug and replug the ACR122 reader
-2. On Linux, check pcscd service:
-   ```bash
-   sudo systemctl start pcscd
-   ```
-3. On Windows, ensure driver is installed
+Connect the ACR122U, select **Device test**, choose your reader, and tap a card.
+Verify UID and ATR appear, then remove and retap the card.
 
-### Dependency install errors on Windows
-
-The `nfc-pcsc` dependency includes a native module that `node-gyp` must compile. Install Python 3 and Visual Studio Build Tools with the **Desktop development with C++** workload, then reopen the terminal and run `setup.bat` again. The deprecated `windows-build-tools` npm package is not required.
-
-## What's Next? 📚
-
-- ✅ Scan multiple cards and see history
-- ✅ Click "Clear History" to reset
-- ✅ Card data is automatically saved locally
-
-### Build Production Version
-
-When ready to create a standalone app:
+To check reader detection without opening the window:
 
 ```bash
-npm run tauri build
+cargo run --manifest-path src-tauri/Cargo.toml --example reader_probe
 ```
 
-Find your app in `src-tauri/target/release/bundle/`
+To build the Windows app, run on a Windows development machine:
 
-## Need More Help? 💡
-
-Check these files:
-- **README.md** - Detailed documentation
-- **DEVELOPMENT.md** - Developer guide
-- **Troubleshooting** - Full troubleshooting guide in README
-
-## Architecture Overview 🏗️
-
-```
-Tauri App (Desktop) 
-    ↓ auto-starts
-Node.js Server (Port 3001)
-    ↓ connects to
-ACR122 RFID Reader (USB)
+```bash
+npm run build
 ```
 
-The app automatically manages everything for you!
+A computer running the packaged app needs the reader driver, PC/SC service, and
+platform runtime dependencies; it does not need Python or Visual Studio Build Tools.
 
----
+Registration and station reporting still use the separate legacy API. Installing
+that server's `nfc-pcsc` native dependency requires Python and a C/C++ build toolchain
+through [node-gyp](https://github.com/nodejs/node-gyp#installation). On Windows, this
+means Python 3 plus Visual Studio C++ Build Tools. This requirement applies when
+building the server dependency, not to the native Device test workflow.
 
-**That's it!** You're ready to scan RFID cards. Enjoy! 🎉
+See [README.md](README.md) for setup scripts and troubleshooting. The older
+[DEVELOPMENT.md](DEVELOPMENT.md) describes the legacy server architecture.
+
+Windows reader/card testing is pending; compilation checks so far ran on macOS.
