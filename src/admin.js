@@ -3,7 +3,6 @@ let token = '', apiBase = '', users = [], filter = 'all', page = 1, selectedRead
 let activeUser = null, capturedUid = '', busy = false, loading = false, refreshGeneration = 0, confirmTask = null;
 let opener;
 const cardDialog = $('#card-dialog'), confirmDialog = $('#confirm-dialog');
-$('#api-url').value = localStorage.getItem('nfc_api_base') || 'https://my.lovenudebeautyhotel.com';
 
 function message(text, error = false) {
   $('#notice').textContent = text;
@@ -33,12 +32,11 @@ $('#login-form').addEventListener('submit', async event => {
   event.preventDefault(); $('#login-error').textContent = '';
   const button = $('#sign-in'); button.disabled = true; button.textContent = 'Signing in…';
   try {
-    const url = new URL($('#api-url').value.trim());
-    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw new Error('Enter a valid HTTP or HTTPS API server URL.');
-    apiBase = url.href.replace(/\/$/, '');
+    if (!window.__TAURI__) throw new Error('Open the desktop app to sign in.');
+    apiBase = await window.__TAURI__.core.invoke('get_api_base_url');
     const body = await request('/api/admin/login', { method: 'POST', body: JSON.stringify({ email: $('#email').value.trim(), password: $('#password').value, device_name: 'NFC desktop' }) });
     if (!body.token) throw new Error('The server did not return a login token.');
-    token = body.token; localStorage.setItem('nfc_api_base', apiBase);
+    token = body.token;
     $('#password').value = ''; $('#admin-name').textContent = body.user?.email || $('#email').value;
     $('#login-screen').hidden = true; $('#workspace').hidden = false;
     message(''); await loadUsers();

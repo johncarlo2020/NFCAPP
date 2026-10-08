@@ -4,7 +4,7 @@ The desktop app now opens `src/index.html`, the card administration workspace bu
 
 ## Use
 
-Run the desktop app with `npm run dev`. Enter the API server base URL and sign in with an admin account. The initial URL comes from the existing server configuration; change it to your deployed API or local development server as needed. Only the server URL is saved locally. The bearer token stays in memory and signing in is required after restarting or returning from the scanner tools.
+Set `NFC_API_BASE_URL` in `server/.env` to your API base URL, then run the desktop app with `npm run dev` and sign in with your staff email and password. The login page has no server URL field. The native environment loader reads the process environment, nearby `.env` files, or the `server/.env` embedded when building the app. If `NFC_API_BASE_URL` is absent, the origin of the existing `USERS_API_URL` is used. The app does not save the server URL locally. The bearer token stays in memory and signing in is required after restarting or returning from the scanner tools.
 
 Connect and select a USB NFC reader, choose **Link card**, and tap a card. Review the captured UID, then click **Link card**. Replacement explicitly identifies the old UID and uses **Confirm replacement**. Unassignment and logout both require confirmation. The UID is sent without changing its representation.
 

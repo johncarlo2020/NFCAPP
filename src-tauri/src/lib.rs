@@ -52,6 +52,32 @@ fn env_value(key: &str) -> Option<String> {
     lookup_in(EMBEDDED_ENV, key)
 }
 
+// Resolve the staff API address from native environment configuration.
+#[tauri::command]
+fn get_api_base_url() -> Result<String, String> {
+    let configured_base = env_value("NFC_API_BASE_URL");
+    let source = configured_base
+        .clone()
+        .or_else(|| env_value("USERS_API_URL"))
+        .ok_or("NFC_API_BASE_URL is not set in .env")?;
+    let mut url = reqwest::Url::parse(&source)
+        .map_err(|_| "Invalid API URL in .env".to_string())?;
+    if !matches!(url.scheme(), "http" | "https")
+        || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+    {
+        return Err("Configure a valid HTTP or HTTPS API URL in .env".to_string());
+    }
+    // The legacy users setting is an endpoint; use its origin for staff API calls.
+    if configured_base.is_none() {
+        url.set_path("/");
+    }
+    Ok(url.as_str().trim_end_matches('/').to_string())
+}
+
 // Fetches users without an NFC code straight from USERS_API_URL (secret stays out of the webview)
 #[tauri::command]
 async fn get_users() -> Result<serde_json::Value, String> {
@@ -191,7 +217,7 @@ pub fn run() {
             nfc::start(app.handle().clone(), status);
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![get_nfc_status, get_users, assign_nfc, station_scan])
+        .invoke_handler(tauri::generate_handler![get_api_base_url, get_nfc_status, get_users, assign_nfc, station_scan])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
