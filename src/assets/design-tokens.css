@@ -1,0 +1,43 @@
+/* Admin-derived tokens for the Tauri app. No runtime or framework dependency. */
+:root {
+  --ysl-font: 'Open Sans', system-ui, sans-serif;
+  --ysl-font-mono: ui-monospace, SFMono-Regular, Consolas, monospace;
+  --ysl-bg: #f8f9fa;
+  --ysl-surface: #ffffff;
+  --ysl-surface-subtle: #f8fafc;
+  --ysl-primary: #5e72e4;
+  --ysl-primary-hover: #4c60d2;
+  --ysl-primary-soft: #eef0ff;
+  --ysl-text: #344767;
+  --ysl-text-secondary: #67748e;
+  --ysl-text-muted: #8392ab;
+  --ysl-border: #e9edf3;
+  --ysl-divider: #edf0f5;
+  --ysl-input-border: #dfe5ee;
+  --ysl-success: #23864b;
+  --ysl-success-soft: #e7f5ec;
+  --ysl-danger: #b42332;
+  --ysl-danger-soft: #fff1f2;
+  --ysl-neutral-soft: #f1f2f5;
+  --ysl-focus: #b6bfff;
+  --ysl-backdrop: #172b4d80;
+  --ysl-space-1: 4px;
+  --ysl-space-2: 8px;
+  --ysl-space-3: 12px;
+  --ysl-space-4: 16px;
+  --ysl-space-5: 20px;
+  --ysl-space-6: 24px;
+  --ysl-space-7: 28px;
+  --ysl-space-8: 32px;
+  --ysl-radius-small: 8px;
+  --ysl-radius-control: 10px;
+  --ysl-radius-menu: 12px;
+  --ysl-radius-card: 16px;
+  --ysl-radius-dialog: 18px;
+  --ysl-radius-login: 20px;
+  --ysl-shadow-menu: 0 12px 32px #34476720;
+  --ysl-shadow-dialog: 0 24px 64px #34476730;
+  --ysl-shadow-login: 0 16px 48px #34476714;
+  --ysl-focus-ring: 0 0 0 3px #5e72e415;
+  --ysl-motion: 200ms;
+}

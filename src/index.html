@@ -1,132 +1,48 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="stylesheet" href="styles.css" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>RFID Scanner - ACR122</title>
-    <script type="module" src="/main.js" defer></script>
-  </head>
-
-  <body>
-    <main class="container">
-      <header class="app-header">
-        <h1>🔖 RFID Scanner</h1>
-        <p class="subtitle" id="subtitle">ACR122 NFC Reader</p>
-      </header>
-
-      <section id="mode-screen" class="mode-screen">
-        <h2>Select scan type</h2>
-        <button class="mode-btn" id="device-test">Device test — read card UID</button>
-        <div class="mode-group">
-          <h3>Registration</h3>
-          <div class="mode-buttons" id="registration-buttons"></div>
-        </div>
-        <div class="mode-group">
-          <h3>Station</h3>
-          <div class="mode-buttons" id="station-buttons"></div>
-        </div>
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NFC Administration</title><link rel="stylesheet" href="admin.css">
+  <script type="module" src="admin.js"></script>
+</head>
+<body>
+  <section id="login-screen" class="login-screen">
+    <div class="login-card">
+      <div class="brand"><span class="brand-mark" aria-hidden="true">N</span><div>NFC Admin<small>DESKTOP WORKSPACE</small></div></div>
+      <h1>Welcome back</h1><p>Sign in to manage users and their NFC cards.</p>
+      <form id="login-form">
+        <label for="api-url">API server</label><input id="api-url" type="url" required placeholder="https://your-admin-server.com" autocomplete="url">
+        <label for="email">Admin email</label><input id="email" type="email" required autocomplete="username" placeholder="admin@example.com">
+        <label for="password">Password</label><input id="password" type="password" required autocomplete="current-password" placeholder="Enter your password">
+        <p id="login-error" class="error" role="alert"></p><button class="primary full" id="sign-in">Sign in <span aria-hidden="true">→</span></button>
+      </form>
+      <p class="login-foot">Secure access for administrators</p>
+    </div>
+  </section>
+  <div id="workspace" class="workspace" hidden>
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-mark" aria-hidden="true">N</span><div>NFC Admin<small>DESKTOP WORKSPACE</small></div></div>
+      <div class="nav-label">WORKSPACE</div>
+      <nav aria-label="Main navigation"><a class="nav-item active" href="index.html" aria-current="page"><span aria-hidden="true">▣</span> Card assignments</a><a class="nav-item" href="scanner.html"><span aria-hidden="true">⌁</span> Scanner & stations <span aria-hidden="true">↗</span></a></nav>
+      <div class="sidebar-note"><span class="tile small" aria-hidden="true">▣</span><strong>One card. One user.</strong><p>Link a card to give each user their own NFC identity.</p></div>
+      <div class="sidebar-footer"><div class="account"><span class="avatar" aria-hidden="true">A</span><div><strong id="admin-name">Administrator</strong><small>Admin account</small></div></div><button id="logout" class="logout">↪ &nbsp; Logout</button></div>
+    </aside>
+    <main class="main">
+      <header class="page-header"><div><div class="eyebrow">WORKSPACE / NFC</div><h1>Card assignments</h1><p>Manage the cards that connect your users.</p></div><span id="reader-status" class="badge neutral" role="status">Reader disconnected</span></header>
+      <section class="reader-bar" aria-label="NFC reader"><span class="tile small" aria-hidden="true">⌁</span><div><strong>NFC reader</strong><p id="reader-detail">Connect a USB reader to link cards.</p></div><label class="sr-only" for="reader">Select reader</label><select id="reader"><option value="">No reader available</option></select></section>
+      <div class="stats"><article class="stat"><span class="tile" aria-hidden="true">♙</span><div><span>Total users</span><strong id="total-count">—</strong></div></article><article class="stat"><span class="tile success" aria-hidden="true">↔</span><div><span>Assigned cards</span><strong id="assigned-count">—</strong></div></article><article class="stat"><span class="tile neutral" aria-hidden="true">▣</span><div><span>Unassigned users</span><strong id="unassigned-count">—</strong></div></article></div>
+      <p id="notice" class="notice" role="status" aria-live="polite" hidden></p>
+      <section class="users-card">
+        <div class="card-heading"><div><h2>Users & cards</h2><p>Select a user to link or manage their NFC card.</p></div><button id="refresh" class="secondary">↻ &nbsp; Refresh</button></div>
+        <div class="toolbar"><div class="search"><span aria-hidden="true">⌕</span><label class="sr-only" for="search">Search mobile number or exact user ID</label><input type="search" id="search" placeholder="Search mobile number or user ID…"></div><details id="export-menu"><summary>↥ &nbsp; Export <span aria-hidden="true">⌄</span></summary><div class="export-options"><button id="export-csv">Download CSV</button><button id="export-copy">Copy to clipboard</button></div></details></div>
+        <div class="filter-row"><div class="filters" role="group" aria-label="Assignment status"><button data-filter="all" aria-pressed="true">All <span id="all-filter-count">0</span></button><button data-filter="assigned" aria-pressed="false">Assigned</button><button data-filter="unassigned" aria-pressed="false">Unassigned</button></div><span id="loading" role="status"></span></div>
+        <div class="table-wrap"><table><thead><tr><th>USER ID</th><th>MOBILE NUMBER</th><th>NFC CARD UID</th><th>STATUS</th><th class="align-right">ACTION</th></tr></thead><tbody id="users-body"></tbody></table></div>
+        <div class="pagination"><div><label for="page-size">Rows per page</label><select id="page-size"><option>10</option><option selected>25</option><option>50</option><option>100</option></select><span id="result-count">0 users</span></div><div class="page-controls"><button id="previous" aria-label="Previous page">‹</button><span id="page-label">Page 1 of 1</span><button id="next" aria-label="Next page">›</button></div></div>
       </section>
-
-      <div id="scan-screen" style="display: none;">
-        <div class="mode-bar">
-          <span class="mode-label" id="mode-label">-</span>
-          <button class="btn-secondary" id="change-mode">Change</button>
-        </div>
-
-        <div class="status-section">
-          <div class="status-card">
-            <div class="status-indicator" id="status-indicator">
-              <span class="status-dot"></span>
-              <span class="status-text" id="status-text">Connecting...</span>
-            </div>
-            <div class="reader-info">
-              <label for="reader-select">Reader:</label>
-              <select id="reader-select">
-                <option value="">Waiting for reader...</option>
-              </select>
-            </div>
-          </div>
-        </div>
-
-        <div class="registration-section" id="registration-section" style="display: none;">
-          <div class="table-header">
-            <h3>Users without NFC</h3>
-            <button class="btn-secondary" id="refresh-users">Refresh</button>
-          </div>
-          <div class="table-wrap">
-            <table class="users-table">
-              <thead>
-                <tr>
-                  <th>ID</th>
-                  <th>Code</th>
-                  <th>Email</th>
-                  <th>Assign</th>
-                </tr>
-              </thead>
-              <tbody id="users-body">
-                <tr><td colspan="4" class="table-empty">Loading users...</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <p class="action-message" id="action-message"></p>
-
-        <div class="scan-section" id="scan-section">
-          <div class="scan-prompt" id="scan-prompt">
-            <div class="scan-icon">📱</div>
-            <p>Place an RFID card on the reader</p>
-          </div>
-
-          <div class="card-display" id="card-display" style="display: none;">
-            <h2>Card Detected</h2>
-            <div class="card-info">
-              <div class="info-row">
-                <span class="info-label">UID:</span>
-                <span class="info-value uid-value" id="card-uid">-</span>
-              </div>
-              <div class="info-row">
-                <span class="info-label">ATR:</span>
-                <span class="info-value" id="card-atr">-</span>
-              </div>
-              <div class="info-row">
-                <span class="info-label">Type:</span>
-                <span class="info-value" id="card-type">-</span>
-              </div>
-              <div class="info-row">
-                <span class="info-label">Standard:</span>
-                <span class="info-value" id="card-standard">-</span>
-              </div>
-              <div class="info-row">
-                <span class="info-label">Scanned:</span>
-                <span class="info-value" id="card-timestamp">-</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="modal-backdrop" id="assign-modal" style="display: none;">
-          <div class="modal">
-            <h2>Assign NFC card</h2>
-            <p class="modal-user" id="modal-user">-</p>
-            <div class="scan-icon" id="modal-icon">📱</div>
-            <p class="modal-status" id="modal-status">Tap the NFC card on the reader...</p>
-            <button class="btn-secondary" id="modal-cancel">Cancel</button>
-          </div>
-        </div>
-
-        <div class="history-section">
-          <h3>Scan History</h3>
-          <div class="history-list" id="history-list">
-            <p class="no-history">No scans yet</p>
-          </div>
-        </div>
-
-        <footer class="app-footer">
-          <button class="btn-secondary" id="clear-history">Clear History</button>
-          <span class="server-status" id="server-status">Reader connection: <span id="server-port">Native PC/SC</span></span>
-        </footer>
-      </div>
+      <footer class="page-foot"><span>NFC desktop workspace</span><span>Card UIDs are shown exactly as read.</span></footer>
     </main>
-  </body></html>
+  </div>
+  <dialog id="card-dialog"><form method="dialog"><button class="dialog-close" aria-label="Close dialog">×</button></form><span class="tile" aria-hidden="true">▣</span><h2 id="dialog-title">Link card</h2><p id="dialog-user"></p><div class="capture"><p id="capture-status">Place a card on the selected reader.</p><strong id="captured-uid" class="uid">Waiting for card…</strong></div><p id="replace-warning" class="warning" hidden></p><p id="dialog-error" class="error" role="alert"></p><div class="dialog-actions"><button id="card-cancel" class="secondary">Cancel</button><button id="link-card" class="primary" disabled>Link card</button></div></dialog>
+  <dialog id="confirm-dialog"><span class="tile" aria-hidden="true">↪</span><h2 id="confirm-title"></h2><p id="confirm-description"></p><p id="confirm-error" class="error" role="alert"></p><div class="dialog-actions"><button id="confirm-cancel" class="secondary">Cancel</button><button id="confirm-action" class="danger">Confirm</button></div></dialog>
+</body>
+</html>
