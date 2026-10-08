@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NFC Workspace · Demo</title><link rel="stylesheet" href="admin.css"><link rel="stylesheet" href="demo.css">
+  <script type="module" src="demo.js"></script>
+</head>
+<body>
+  <section id="login-screen" class="login-screen">
+    <div class="login-card">
+      <div class="brand"><span class="brand-mark" aria-hidden="true">N</span><div>NFC Admin<small>DESKTOP WORKSPACE</small></div></div>
+      <h1>Welcome back</h1><p>Explore card registration and station check-in with sample data.</p>
+      <form id="login-form">
+        <div class="demo-callout"><strong>Demo workspace</strong><p>All accounts use password <code>demo123</code>. Changes stay in this session.</p></div>
+        <label for="demo-account">Sample account</label><select id="demo-account"><option value="admin@demo.local">Administrator · all workflows</option><option value="registration1@staff.ysl.local">Registration staff 1</option><option value="registration2@staff.ysl.local">Registration staff 2</option><option value="station1@staff.ysl.local">Station 1 staff</option><option value="station2@staff.ysl.local">Station 2 staff</option><option value="station3@staff.ysl.local">Station 3 staff</option><option value="station4@staff.ysl.local">Station 4 staff</option></select>
+        <label for="email">Email</label><input id="email" type="email" required autocomplete="off" value="admin@demo.local">
+        <label for="password">Demo password</label><input id="password" type="password" required autocomplete="off" value="demo123">
+        <p id="login-error" class="error" role="alert"></p><button class="primary full" id="sign-in">Sign in <span aria-hidden="true">→</span></button>
+      </form>
+      <p class="login-foot">Sample accounts only · no API connection</p>
+    </div>
+  </section>
+  <div id="workspace" class="workspace" hidden>
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-mark" aria-hidden="true">N</span><div>NFC Admin<small>DESKTOP WORKSPACE</small></div></div>
+      <div class="nav-label">WORKSPACE</div>
+      <nav aria-label="Main navigation"><button id="nav-cards" class="nav-item active"><span aria-hidden="true">▣</span> Card assignments</button><button id="nav-stations" class="nav-item"><span aria-hidden="true">⌁</span> Station check-in</button></nav>
+      <div class="sidebar-note"><span class="tile small" aria-hidden="true">▣</span><strong>One card. One user.</strong><p>Link a card to give each user their own NFC identity.</p></div>
+      <div class="sidebar-footer"><div class="account"><span class="avatar" aria-hidden="true">A</span><div><strong id="admin-name">Administrator</strong><small id="account-role">Admin account</small></div></div><button id="logout" class="logout">↪ &nbsp; Logout</button></div>
+    </aside>
+    <main class="main">
+      <header class="page-header"><div><div class="eyebrow">DEMO / NFC WORKSPACE</div><h1 id="page-title">Card assignments</h1><p id="page-description">Manage the cards that connect your users.</p></div><span id="reader-status" class="badge neutral" role="status">Reader disconnected</span></header>
+      <section class="reader-bar" aria-label="NFC reader"><span class="tile small" aria-hidden="true">⌁</span><div><strong>NFC reader</strong><p id="reader-detail">Connect a USB reader to link cards.</p></div><button id="reader-toggle" class="secondary">Disconnect reader</button></section>
+      <div id="assignment-stats" class="stats"><article class="stat"><span class="tile" aria-hidden="true">♙</span><div><span>Total users</span><strong id="total-count">—</strong></div></article><article class="stat"><span class="tile success" aria-hidden="true">↔</span><div><span>Assigned cards</span><strong id="assigned-count">—</strong></div></article><article class="stat"><span class="tile neutral" aria-hidden="true">▣</span><div><span>Unassigned users</span><strong id="unassigned-count">—</strong></div></article></div>
+      <p id="notice" class="notice" role="status" aria-live="polite" hidden></p>
+      <section id="assignment-page" class="users-card">
+        <div class="card-heading"><div><h2>Users & cards</h2><p>Select a user to link or manage their NFC card.</p></div><button id="refresh" class="secondary">↻ &nbsp; Refresh</button></div>
+        <div class="toolbar"><div class="search"><span aria-hidden="true">⌕</span><label class="sr-only" for="search">Search mobile number, exact user ID, or exact card UID</label><input type="search" id="search" placeholder="Search mobile, ID, or card UID…"></div><details id="export-menu"><summary>↥ &nbsp; Export <span aria-hidden="true">⌄</span></summary><div class="export-options"><button id="export-csv">Download CSV</button><button id="export-copy">Copy to clipboard</button></div></details></div>
+        <div class="filter-row"><div class="filters" role="group" aria-label="Assignment status"><button data-filter="all" aria-pressed="true">All <span id="all-filter-count">0</span></button><button data-filter="assigned" aria-pressed="false">Assigned</button><button data-filter="unassigned" aria-pressed="false">Unassigned</button></div><span id="loading" role="status"></span></div>
+        <div class="table-wrap"><table><thead><tr><th>USER ID</th><th>MOBILE NUMBER</th><th>NFC CARD UID</th><th>STATUS</th><th class="align-right">ACTION</th></tr></thead><tbody id="users-body"></tbody></table></div>
+        <div class="pagination"><div><label for="page-size">Rows per page</label><select id="page-size"><option>10</option><option selected>25</option><option>50</option><option>100</option></select><span id="result-count">0 users</span></div><div class="page-controls"><button id="previous" aria-label="Previous page">‹</button><span id="page-label">Page 1 of 1</span><button id="next" aria-label="Next page">›</button></div></div>
+      </section>
+      <section id="station-page" class="station-layout" hidden>
+        <article class="users-card station-card"><h2>Station check-in</h2><p>Select a station, then simulate a card tap.</p><label for="station-select">Station</label><select id="station-select"></select><label for="station-uid">Card UID</label><input id="station-uid" class="uid" value="04A1B2C3D4" placeholder="Enter a sample UID"><div class="sample-taps"><button data-uid="04A1B2C3D4" class="secondary">Ready for redemption</button><button data-uid="04F5E6D7C8" class="secondary">New attendee</button><button data-uid="UNKNOWN" class="secondary">Unknown card</button></div><button id="check-in" class="primary full">Simulate card tap</button><p id="station-result" class="notice" role="status" aria-live="polite" hidden></p><label class="simulate-failure"><input type="checkbox" id="uncertain-error"> Simulate an uncertain server error</label></article>
+        <article class="users-card station-card"><h2>Recent check-ins</h2><p>Demo results from this session.</p><div id="check-in-history" class="check-in-history"></div><div class="demo-callout"><strong>Station 4 · gift redemption</strong><p>Stations 1, 2, and 3 must be complete. Redemption clears the linked UID so the card can be reused.</p></div></article>
+      </section>
+      <footer class="page-foot"><span>Demo workspace · sample data</span><button id="reset-demo" class="secondary">Reset sample data</button><span>Card UIDs are shown exactly as read.</span></footer>
+    </main>
+  </div>
+  <dialog id="card-dialog"><form method="dialog"><button class="dialog-close" aria-label="Close dialog">×</button></form><span class="tile" aria-hidden="true">▣</span><h2 id="dialog-title">Link card</h2><p id="dialog-user"></p><label for="capture-input">Simulated card UID</label><div class="demo-capture"><input id="capture-input" class="uid" value="04NEWCARD01"><button id="simulate-capture" class="secondary">Simulate tap</button></div><div class="capture"><p id="capture-status">Place a card on the selected reader.</p><strong id="captured-uid" class="uid">Waiting for card…</strong></div><p id="replace-warning" class="warning" hidden></p><p id="dialog-error" class="error" role="alert"></p><div class="dialog-actions"><button id="card-cancel" class="secondary">Cancel</button><button id="link-card" class="primary" disabled>Link card</button></div></dialog>
+  <dialog id="confirm-dialog"><span class="tile" aria-hidden="true">↪</span><h2 id="confirm-title"></h2><p id="confirm-description"></p><p id="confirm-error" class="error" role="alert"></p><div class="dialog-actions"><button id="confirm-cancel" class="secondary">Cancel</button><button id="confirm-action" class="danger">Confirm</button></div></dialog>
+</body>
+</html>
