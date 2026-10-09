@@ -1,30 +1,129 @@
 const $ = selector => document.querySelector(selector);
 let token = '', apiBase = '', users = [], filter = 'all', page = 1, selectedReader = '', readers = [], readerCards = {}, readerError = '', unlisten;
 let activeUser = null, capturedUid = '', busy = false, loading = false, refreshGeneration = 0, confirmTask = null;
-let opener;
-const cardDialog = $('#card-dialog'), confirmDialog = $('#confirm-dialog');
+let opener, account = null, stationJob = null;
+const canAssign = () => account?.role === 'admin' || account?.staff_function === 'register';
+const isStation = () => account?.role !== 'admin' && account?.staff_function === 'station';
+const cardDialog = $('#card-dialog'), confirmDialog = $('#confirm-dialog'), lookupDialog = $('#lookup-dialog');
+let lookupJob = null;
 
 function message(text, error = false) {
   $('#notice').textContent = text;
   $('#notice').className = `notice${error ? ' error' : ''}`;
   $('#notice').hidden = !text;
 }
+function renderAccount(user = {}) {
+  const role = user.role === 'admin' ? 'Admin account'
+    : user.staff_function === 'register' ? 'Registration staff account'
+    : user.staff_function === 'station' ? 'Station staff account'
+    : 'Staff account';
+  const station = user.role !== 'admin' && user.staff_function === 'station'
+    ? (user.station_id != null && String(user.station_id).trim() !== '' ? `Station ${user.station_id}` : 'Station not assigned')
+    : '';
+  $('#account-role').textContent = role;
+  $('#account-station').textContent = station;
+  $('#account-station').hidden = !station;
+  $('#session-account').textContent = station ? `${role} · ${station}` : role;
+}
+
+function clearLookup() {
+  lookupJob = null;
+  $('#lookup-details').hidden = true; $('#lookup-error').textContent = '';
+  $('#lookup-uid').textContent = 'Waiting for card…';
+  for (const id of ['lookup-name', 'lookup-user-id', 'lookup-mobile', 'lookup-email', 'lookup-code', 'lookup-card', 'lookup-role']) $(`#${id}`).textContent = '';
+}
+function renderLookupReader() {
+  $('#lookup-reader').replaceChildren();
+  if (!selectedReader) $('#lookup-reader').append(new Option(readers.length ? 'Select a reader…' : 'No reader available', ''));
+  for (const reader of readers) $('#lookup-reader').append(new Option(reader, reader));
+  $('#lookup-reader').value = selectedReader;
+  if (!lookupJob) $('#lookup-status').textContent = readerError || (!selectedReader ? 'Connect and select an NFC reader first.' : $('#lookup-details').hidden ? 'Tap a card on the selected reader.' : 'Customer found. Tap another card to search again.');
+}
+$('#card-assignments').addEventListener('click', () => {
+  if (!token || !canAssign()) return;
+  lookupDialog.close(); renderWorkspace();
+});
+$('#rfid-lookup').addEventListener('click', () => {
+  if (!token || !canAssign() || busy || cardDialog.open || confirmDialog.open) return;
+  clearLookup(); renderLookupReader(); lookupDialog.showModal(); $('#lookup-close').focus();
+});
+$('#lookup-close').addEventListener('click', () => lookupDialog.close());
+lookupDialog.addEventListener('close', () => { clearLookup(); $('#rfid-lookup').focus(); });
+lookupDialog.addEventListener('cancel', clearLookup);
+$('#lookup-reader').addEventListener('change', () => { selectedReader = $('#lookup-reader').value; $('#reader').value = selectedReader; clearLookup(); renderReader(); });
+async function lookupCard(uid) {
+  if (!token || !canAssign() || !lookupDialog.open || !selectedReader || readerError) return;
+  clearLookup(); const job = { token }; lookupJob = job;
+  $('#lookup-uid').textContent = uid; $('#lookup-status').textContent = 'Looking up customer…';
+  try {
+    const body = await request(`/api/admin/users/by-rfid?rfid_uid=${encodeURIComponent(uid)}`);
+    if (lookupJob !== job || token !== job.token || !lookupDialog.open) return;
+    const user = body.data;
+    if (!user || typeof user !== 'object' || Array.isArray(user) || user.id == null) throw new Error('The server returned invalid customer details.');
+    const name = user.name || [user.first_name, user.last_name].filter(Boolean).join(' ');
+    $('#lookup-name-row').hidden = !name; $('#lookup-name').textContent = name;
+    $('#lookup-user-id').textContent = String(user.id);
+    $('#lookup-mobile').textContent = user.mobile_number || user.code || '—';
+    $('#lookup-email').textContent = user.email || '—'; $('#lookup-code').textContent = user.code || '—';
+    $('#lookup-card').textContent = user.rfid_uid || uid; $('#lookup-role').textContent = user.role || 'Customer';
+    $('#lookup-details').hidden = false; $('#lookup-status').textContent = 'Customer found. Tap another card to search again.';
+  } catch (error) {
+    if (lookupJob !== job || token !== job.token || !lookupDialog.open) return;
+    $('#lookup-status').textContent = 'Tap another card to search again.';
+    $('#lookup-error').textContent = error.status === 404 ? 'No customer is linked to this card.' : error.message;
+  } finally { if (lookupJob === job) lookupJob = null; }
+}
+
+function renderWorkspace() {
+  const station = isStation();
+  for (const id of ['assignments', 'assignment-stats', 'assignment-nav', 'assignment-note']) $(`#${id}`).hidden = !canAssign();
+  $('#station-view').hidden = !station;
+  $('#page-title').textContent = station ? `Station ${account.station_id}` : 'Card assignments';
+  $('#page-description').textContent = station ? 'Tap NFC cards to check in attendees at your assigned station.' : 'Manage the cards that connect your users.';
+  $('#station-title').textContent = station ? `Station ${account.station_id} check-in` : 'Station check-in';
+  renderReader();
+}
+async function checkInCard(uid) {
+  if (!token || !isStation() || stationJob || !selectedReader || readerError) return;
+  const job = { token }; stationJob = job;
+  $('#station-card-uid').textContent = uid;
+  $('#station-result').hidden = false; $('#station-result').className = 'notice';
+  $('#station-result').textContent = 'Checking in…';
+  try {
+    const body = await request('/api/admin/stations/check-in', { method: 'POST', body: JSON.stringify({ rfid_uid: uid }) });
+    if (stationJob !== job || token !== job.token) return;
+    const accepted = body.status === 'success' || body.status === 'duplicate';
+    $('#station-result').className = accepted ? 'notice' : 'notice error';
+    $('#station-result').textContent = body.message || (body.status === 'success' ? 'Station checked in successfully.' : body.status === 'duplicate' ? 'Already checked in at this station.' : 'Check-in was not confirmed. Verify the result before tapping again.');
+  } catch (error) {
+    if (stationJob !== job || token !== job.token) return;
+    $('#station-result').className = 'notice error';
+    $('#station-result').textContent = error.status >= 500 || !error.status
+      ? 'Check-in outcome uncertain. Verify the result before tapping again.'
+      : error.message;
+  } finally { if (stationJob === job) stationJob = null; }
+}
+
 function showLogin(reason = '') {
-  token = ''; users = []; refreshGeneration++; loading = false;
-  cardDialog.close(); confirmDialog.close();
+  token = ''; account = null; stationJob = null; users = []; refreshGeneration++; loading = false;
+  $('#station-result').hidden = true; $('#station-result').textContent = ''; $('#station-card-uid').textContent = 'Waiting for card…';
+  renderAccount(); $('#admin-name').textContent = 'Staff';
+  clearLookup(); lookupDialog.close(); cardDialog.close(); confirmDialog.close();
   $('#workspace').hidden = true; $('#login-screen').hidden = false;
   $('#login-error').textContent = reason; $('#password').value = '';
 }
 async function request(path, options = {}) {
+  const requestToken = token;
   const response = await fetch(`${apiBase}${path}`, {
     ...options,
     headers: { Accept: 'application/json', 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
   });
   const body = response.status === 204 ? {} : await response.json().catch(() => ({}));
   if (!response.ok) {
-    if (response.status === 401 && token) showLogin('Your session expired. Please sign in again.');
+    if (response.status === 401 && token && token === requestToken) showLogin('Your session expired. Please sign in again.');
     const errors = Object.values(body.errors || {}).flat().join(' ');
-    throw new Error(errors || body.message || (response.status === 429 ? 'Too many attempts. Please try again later.' : `Request failed (${response.status}).`));
+    const error = new Error(errors || body.message || (response.status === 429 ? 'Too many attempts. Please try again later.' : `Request failed (${response.status}).`));
+    error.status = response.status; throw error;
   }
   return body;
 }
@@ -36,15 +135,20 @@ $('#login-form').addEventListener('submit', async event => {
     apiBase = await window.__TAURI__.core.invoke('get_api_base_url');
     const body = await request('/api/admin/login', { method: 'POST', body: JSON.stringify({ email: $('#email').value.trim(), password: $('#password').value, device_name: 'NFC desktop' }) });
     if (!body.token) throw new Error('The server did not return a login token.');
-    token = body.token;
+    if (!body.user || !(body.user.role === 'admin' || ['register', 'station'].includes(body.user.staff_function))) throw new Error('The server did not return a supported account type.');
+    if (body.user.role !== 'admin' && body.user.staff_function === 'station' && !(Number(body.user.station_id) > 0)) throw new Error('No station is assigned to this account.');
+    token = body.token; account = body.user; refreshGeneration++;
+    renderWorkspace();
     $('#password').value = ''; $('#admin-name').textContent = body.user?.email || $('#email').value;
+    renderAccount(body.user || {});
     $('#login-screen').hidden = true; $('#workspace').hidden = false;
-    message(''); await loadUsers();
+    message(''); if (canAssign()) await loadUsers();
   } catch (error) { $('#login-error').textContent = error.message; }
   finally { button.disabled = false; button.innerHTML = 'Sign in <span aria-hidden="true">→</span>'; }
 });
 
 async function loadUsers() {
+  if (!token || !canAssign()) return;
   const generation = ++refreshGeneration;
   loading = true; $('#loading').textContent = 'Refreshing users…'; $('#refresh').disabled = true; render();
   try {
@@ -105,19 +209,8 @@ $('#previous').addEventListener('click', () => { page--; render(); }); $('#next'
 document.querySelectorAll('[data-filter]').forEach(button => button.addEventListener('click', () => {
   filter = button.dataset.filter; page = 1; document.querySelectorAll('[data-filter]').forEach(item => item.setAttribute('aria-pressed', String(item === button))); render();
 }));
-function exportRows() { return [['User ID', 'Mobile number', 'NFC UID', 'Status'], ...filteredUsers().map(user => [user.id, user.mobile_number || user.code || '', user.rfid_uid || '', user.rfid_uid ? 'Assigned' : 'Unassigned'])]; }
-// Protect spreadsheet imports from formula execution while preserving the visible UID in the app.
-function exportValue(value) { const text = String(value); return /^[\s]*[=+@-]/.test(text) ? `'${text}` : text; }
-$('#export-csv').addEventListener('click', () => {
-  const csv = exportRows().map(row => row.map(value => `"${exportValue(value).replace(/"/g, '""')}"`).join(',')).join('\r\n');
-  const url = URL.createObjectURL(new Blob(['\ufeff', csv], { type: 'text/csv;charset=utf-8' })); const link = document.createElement('a'); link.href = url; link.download = 'nfc-assignments.csv'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); $('#export-menu').open = false; message(`Exported ${filteredUsers().length} filtered users.`);
-});
-$('#export-copy').addEventListener('click', async () => {
-  try { await navigator.clipboard.writeText(exportRows().map(row => row.map(value => exportValue(value).replace(/[\t\r\n]/g, ' ')).join('\t')).join('\n')); message(`Copied ${filteredUsers().length} filtered users.`); }
-  catch { message('Clipboard access failed. Use Download CSV instead.', true); }
-  $('#export-menu').open = false;
-});
 function openCard(user, button) {
+  if (!canAssign()) return;
   activeUser = user; capturedUid = ''; busy = false; opener = button;
   $('#dialog-title').textContent = user.rfid_uid ? 'Replace card' : 'Link card';
   $('#dialog-user').textContent = `User #${user.id} · ${user.mobile_number || user.code || user.email || 'No mobile number'}`;
@@ -147,11 +240,12 @@ function openConfirm(title, description, label, task, button) {
   opener = button; confirmTask = task; $('#confirm-title').textContent = title; $('#confirm-description').textContent = description; $('#confirm-action').textContent = label; $('#confirm-error').textContent = ''; confirmDialog.showModal(); $('#confirm-cancel').focus();
 }
 function openUnassign(user, button) {
+  if (!canAssign()) return;
   openConfirm('Unassign this card?', `Card ${user.rfid_uid} will be removed from user #${user.id}. You can link a card again later.`, 'Yes, unassign', async () => {
     await request(`/api/admin/users/${encodeURIComponent(user.id)}/nfc`, { method: 'DELETE' }); user.rfid_uid = null; render(); message(`Card unassigned from user #${user.id}.`);
   }, button);
 }
-$('#logout').addEventListener('click', event => openConfirm('Log out?', 'You will need to sign in again to manage card assignments.', 'Yes, log out', async () => { await request('/api/admin/logout', { method: 'POST' }); showLogin(); }, event.currentTarget));
+$('#logout').addEventListener('click', event => openConfirm('Log out?', 'You will need to sign in again to use the workspace.', 'Yes, log out', async () => { await request('/api/admin/logout', { method: 'POST' }); showLogin(); }, event.currentTarget));
 $('#confirm-cancel').addEventListener('click', () => { if (!busy) confirmDialog.close(); });
 confirmDialog.addEventListener('cancel', event => { if (busy) event.preventDefault(); }); confirmDialog.addEventListener('close', () => opener?.focus());
 $('#confirm-action').addEventListener('click', async () => {
@@ -163,8 +257,8 @@ $('#confirm-action').addEventListener('click', async () => {
 function renderReader() {
   const connected = Boolean(selectedReader) && !readerError;
   $('#reader-status').textContent = connected ? 'Reader connected' : 'Reader disconnected'; $('#reader-status').className = `badge ${connected ? 'success' : 'neutral'}`;
-  $('#reader-detail').textContent = readerError || (selectedReader ? 'Ready to read. Select a user to link a card.' : 'Connect a USB reader to link cards.');
-  updateCapture();
+  $('#reader-detail').textContent = readerError || (selectedReader ? (isStation() ? 'Ready to read. Tap an NFC card to check in.' : 'Ready to read. Select a user to link a card.') : 'Connect a USB NFC reader.');
+  updateCapture(); renderLookupReader();
 }
 function handleReaderStatus(status) {
   readers = status.readers || []; readerError = status.error || '';
@@ -174,7 +268,12 @@ function handleReaderStatus(status) {
   readers.forEach(reader => $('#reader').append(new Option(reader, reader))); $('#reader').value = selectedReader;
   const cards = status.cards || {}, card = cards[selectedReader];
   if (cardDialog.open && !busy && card && card.uid !== readerCards[selectedReader]?.uid) { capturedUid = card.uid; $('#dialog-error').textContent = ''; }
+  const newTap = card && card.uid !== readerCards[selectedReader]?.uid;
+  const stationTap = isStation() && !lookupDialog.open && newTap;
+  const lookupTap = canAssign() && lookupDialog.open && newTap;
   readerCards = cards; renderReader();
+  if (lookupTap) void lookupCard(card.uid);
+  else if (stationTap) void checkInCard(card.uid);
 }
 $('#reader').addEventListener('change', () => { selectedReader = $('#reader').value; capturedUid = ''; renderReader(); });
 async function connectReader() {
