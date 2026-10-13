@@ -66,6 +66,12 @@
     </dl>
     <div class="dialog-actions"><button id="lookup-close" class="secondary" type="button">Close</button></div>
   </dialog>
+  <dialog id="reward-dialog" aria-labelledby="reward-title" aria-describedby="reward-description">
+    <h2 id="reward-title">Not eligible for rewards</h2>
+    <p id="reward-description">You haven't completed all required stations yet. Please complete stations 1, 2, and 3 before claiming your reward at station 4.</p>
+    <div class="capture"><p>NFC card UID</p><strong id="reward-card-uid" class="uid"></strong></div>
+    <div class="dialog-actions"><button id="reward-close" class="primary" type="button">Got it</button></div>
+  </dialog>
   <dialog id="confirm-dialog"><span class="tile" aria-hidden="true">↪</span><h2 id="confirm-title"></h2><p id="confirm-description"></p><p id="confirm-error" class="error" role="alert"></p><div class="dialog-actions"><button id="confirm-cancel" class="secondary">Cancel</button><button id="confirm-action" class="danger">Confirm</button></div></dialog>
 </body>
 </html>

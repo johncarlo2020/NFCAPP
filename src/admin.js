@@ -5,6 +5,16 @@ let opener, account = null, stationJob = null;
 const canAssign = () => account?.role === 'admin' || account?.staff_function === 'register';
 const isStation = () => account?.role !== 'admin' && account?.staff_function === 'station';
 const cardDialog = $('#card-dialog'), confirmDialog = $('#confirm-dialog'), lookupDialog = $('#lookup-dialog');
+const rewardDialog = $('#reward-dialog');
+$('#reward-close').addEventListener('click', () => rewardDialog.close());
+rewardDialog.addEventListener('close', () => { if (token && isStation()) $('#reader').focus(); });
+
+function showRewardIneligible(status, uid) {
+  if (status !== 'prerequisites_not_met' || !isStation() || Number(account.station_id) !== 4) return;
+  $('#reward-card-uid').textContent = uid;
+  if (!rewardDialog.open) rewardDialog.showModal();
+  $('#reward-close').focus();
+}
 let lookupJob = null;
 
 function message(text, error = false) {
@@ -84,7 +94,7 @@ function renderWorkspace() {
   renderReader();
 }
 async function checkInCard(uid) {
-  if (!token || !isStation() || stationJob || !selectedReader || readerError) return;
+  if (!token || !isStation() || stationJob || rewardDialog.open || !selectedReader || readerError) return;
   const job = { token }; stationJob = job;
   $('#station-card-uid').textContent = uid;
   $('#station-result').hidden = false; $('#station-result').className = 'notice';
@@ -95,12 +105,14 @@ async function checkInCard(uid) {
     const accepted = body.status === 'success' || body.status === 'duplicate';
     $('#station-result').className = accepted ? 'notice' : 'notice error';
     $('#station-result').textContent = body.message || (body.status === 'success' ? 'Station checked in successfully.' : body.status === 'duplicate' ? 'Already checked in at this station.' : 'Check-in was not confirmed. Verify the result before tapping again.');
+    showRewardIneligible(body.status, uid);
   } catch (error) {
     if (stationJob !== job || token !== job.token) return;
     $('#station-result').className = 'notice error';
     $('#station-result').textContent = error.status >= 500 || !error.status
       ? 'Check-in outcome uncertain. Verify the result before tapping again.'
       : error.message;
+    showRewardIneligible(error.apiStatus, uid);
   } finally { if (stationJob === job) stationJob = null; }
 }
 
@@ -108,7 +120,7 @@ function showLogin(reason = '') {
   token = ''; account = null; stationJob = null; users = []; refreshGeneration++; loading = false;
   $('#station-result').hidden = true; $('#station-result').textContent = ''; $('#station-card-uid').textContent = 'Waiting for card…';
   renderAccount(); $('#admin-name').textContent = 'Staff';
-  clearLookup(); lookupDialog.close(); cardDialog.close(); confirmDialog.close();
+  clearLookup(); lookupDialog.close(); cardDialog.close(); confirmDialog.close(); rewardDialog.close();
   $('#workspace').hidden = true; $('#login-screen').hidden = false;
   $('#login-error').textContent = reason; $('#password').value = '';
 }
@@ -123,7 +135,7 @@ async function request(path, options = {}) {
     if (response.status === 401 && token && token === requestToken) showLogin('Your session expired. Please sign in again.');
     const errors = Object.values(body.errors || {}).flat().join(' ');
     const error = new Error(errors || body.message || (response.status === 429 ? 'Too many attempts. Please try again later.' : `Request failed (${response.status}).`));
-    error.status = response.status; throw error;
+    error.status = response.status; error.apiStatus = body.status; throw error;
   }
   return body;
 }
