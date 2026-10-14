@@ -8,6 +8,8 @@ fn main() {
     let contents = fs::read_to_string(&source).unwrap_or_default();
     fs::write(out, contents).unwrap();
     println!("cargo:rerun-if-changed=../server/.env");
+    // This app bundles local frontend files rather than using a development server.
+    println!("cargo:rerun-if-changed=../src");
 
     tauri_build::build()
 }

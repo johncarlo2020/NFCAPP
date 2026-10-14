@@ -29,6 +29,18 @@ npm install
 cd server && npm install && cd ..
 ```
 
+## Test NFC without hardware
+
+Manual NFC controls are currently hidden and disabled. To re-enable them for local testing, change the native `is_dev_mode` command in `src-tauri/src/lib.rs` to return `cfg!(debug_assertions)`, rebuild with `npm run dev`, sign in, then enable **Manual NFC mode (development only)**.
+
+- For card assignments, select **Link card** or **Replace card**, enter a test UID such as `TEST0001`, and confirm the assignment.
+- For station accounts, enter the same assigned UID and click **Simulate tap**. Each click represents a new card tap.
+- RFID lookup also accepts a typed UID while manual mode is enabled.
+
+Manual mode uses the configured API and updates its assignments and check-ins. It preserves normal account permissions and reward eligibility checks. Physical card events are ignored while it is enabled. Turning it off restores normal reader input; logging out resets it.
+
+The controls are available only in Tauri debug builds and are hidden in release builds created with `npm run build`.
+
 ## Project Architecture
 
 ### Overview

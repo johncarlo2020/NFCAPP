@@ -31,6 +31,8 @@ List parameters: `without_nfc=1`, `search` (mobile number, exact ID, or exact RF
 
 User fields: `id`, `email`, `code`, `mobile_number`, `rfid_uid`. Registration stores the mobile number in `code`; older records may contain a legacy registration code.
 
+User responses also include `completed_station_ids` (sorted, distinct station IDs, including station 4), `all_stations_completed` (stations 1–4 complete), `redeemed` (station 4 complete), and `can_link_nfc` (false after redemption). These fields remain available after the NFC card is released. The desktop list shows **Reward redeemed** and closes linking for redeemed attendees, including card replacement. The assignment API also rejects these requests with HTTP 422 and an `rfid_uid` validation error; it locks the attendee row so final-station redemption and assignment cannot race.
+
 Assignment body:
 
 ```json

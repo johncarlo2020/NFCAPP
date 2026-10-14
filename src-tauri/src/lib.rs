@@ -207,6 +207,12 @@ fn get_nfc_status(state: tauri::State<'_, nfc::SharedStatus>) -> Result<nfc::Sta
         .map_err(|e| e.to_string())
 }
 
+// Manual testing is disabled now that reader-free testing is complete.
+#[tauri::command]
+fn is_dev_mode() -> bool {
+    false
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -217,7 +223,7 @@ pub fn run() {
             nfc::start(app.handle().clone(), status);
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![get_api_base_url, get_nfc_status, get_users, assign_nfc, station_scan])
+        .invoke_handler(tauri::generate_handler![get_api_base_url, get_nfc_status, is_dev_mode, get_users, assign_nfc, station_scan])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

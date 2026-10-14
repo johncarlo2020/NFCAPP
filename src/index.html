@@ -16,7 +16,6 @@
         <p id="login-error" class="error" role="alert"></p><button class="primary full" id="sign-in">Sign in <span aria-hidden="true">→</span></button>
       </form>
       <button type="button" class="secondary full" id="restore-session" hidden>Retry saved login</button>
-      <p class="login-foot">Secure access for staff · <a href="demo.html">Try the demo</a></p>
     </div>
   </section>
   <div id="workspace" class="workspace" hidden>
@@ -30,30 +29,41 @@
     <main class="main">
       <header class="page-header"><div><div class="eyebrow">WORKSPACE / NFC</div><h1 id="page-title">Card assignments</h1><p id="page-description">Manage the cards that connect your users.</p></div><div class="header-status"><span id="session-account" class="session-account" aria-label="Signed-in account type">Staff account</span><span id="reader-status" class="badge neutral" role="status">Reader disconnected</span></div></header>
       <section class="reader-bar" aria-label="NFC reader"><span class="tile small" aria-hidden="true">⌁</span><div><strong>NFC reader</strong><p id="reader-detail">Connect a USB reader to link cards.</p></div><label class="sr-only" for="reader">Select reader</label><select id="reader"><option value="">No reader available</option></select></section>
-      <div id="assignment-stats" class="stats"><article class="stat"><span class="tile" aria-hidden="true">♙</span><div><span>Total users</span><strong id="total-count">—</strong></div></article><article class="stat"><span class="tile success" aria-hidden="true">↔</span><div><span>Assigned cards</span><strong id="assigned-count">—</strong></div></article><article class="stat"><span class="tile neutral" aria-hidden="true">▣</span><div><span>Unassigned users</span><strong id="unassigned-count">—</strong></div></article></div>
+      <div id="assignment-stats" class="stats"><article class="stat"><span class="tile" aria-hidden="true">♙</span><div><span>Total users</span><strong id="total-count">—</strong></div></article><article class="stat"><span class="tile success" aria-hidden="true">↔</span><div><span>Assigned cards</span><strong id="assigned-count">—</strong></div></article><article class="stat"><span class="tile neutral" aria-hidden="true">▣</span><div><span>Awaiting card</span><strong id="unassigned-count">—</strong></div></article></div>
       <p id="notice" class="notice" role="status" aria-live="polite" hidden></p>
+      <section id="dev-controls" class="manual-panel" hidden aria-label="Development testing">
+        <label><input id="manual-mode" type="checkbox"> Manual NFC mode (development only)</label>
+        <p>Enter a card UID to test without hardware. Assignments and check-ins use the configured API and update its data.</p>
+      </section>
       <section id="assignments" class="users-card">
         <div class="card-heading"><div><h2>Users & cards</h2><p>Select a user to link or manage their NFC card.</p></div><button id="refresh" class="secondary">↻ &nbsp; Refresh</button></div>
         <div class="toolbar"><div class="search"><span aria-hidden="true">⌕</span><label class="sr-only" for="search">Search mobile number or exact user ID</label><input type="search" id="search" placeholder="Search mobile number or user ID…"></div></div>
-        <div class="filter-row"><div class="filters" role="group" aria-label="Assignment status"><button data-filter="all" aria-pressed="true">All <span id="all-filter-count">0</span></button><button data-filter="assigned" aria-pressed="false">Assigned</button><button data-filter="unassigned" aria-pressed="false">Unassigned</button></div><span id="loading" role="status"></span></div>
-        <div class="table-wrap"><table><thead><tr><th>USER ID</th><th>MOBILE NUMBER</th><th>NFC CARD UID</th><th>STATUS</th><th class="align-right">ACTION</th></tr></thead><tbody id="users-body"></tbody></table></div>
+        <div class="filter-row"><div class="filters" role="group" aria-label="Assignment status"><button data-filter="all" aria-pressed="true">All <span id="all-filter-count">0</span></button><button data-filter="assigned" aria-pressed="false">Assigned</button><button data-filter="unassigned" aria-pressed="false">Unassigned</button><button data-filter="redeemed" aria-pressed="false">Reward redeemed</button></div><span id="loading" role="status"></span></div>
+        <div class="table-wrap"><table><thead><tr><th>USER ID</th><th>MOBILE NUMBER</th><th>NFC CARD UID</th><th>CARD STATUS</th><th>STATION PROGRESS</th><th class="align-right">ACTION</th></tr></thead><tbody id="users-body"></tbody></table></div>
         <div class="pagination"><div><label for="page-size">Rows per page</label><select id="page-size"><option>10</option><option selected>25</option><option>50</option><option>100</option></select><span id="result-count">0 users</span></div><div class="page-controls"><button id="previous" aria-label="Previous page">‹</button><span id="page-label">Page 1 of 1</span><button id="next" aria-label="Next page">›</button></div></div>
       </section>
       <section id="station-view" class="users-card station-view" hidden aria-labelledby="station-title">
         <span class="tile" aria-hidden="true">⌁</span><h2 id="station-title">Station check-in</h2>
-        <p>Tap an attendee's NFC card on the selected reader to check in.</p>
-        <p>Remove the card before the next tap.</p>
+        <p id="station-instructions">Tap an attendee's NFC card on the selected reader to check in. Remove the card before the next tap.</p>
+        <form id="manual-station" class="manual-panel" hidden>
+          <label for="manual-station-uid">Card UID</label><input id="manual-station-uid" type="text" maxlength="64" required autocomplete="off" placeholder="e.g. TEST0001">
+          <button id="manual-station-tap" class="primary" type="submit">Simulate tap</button>
+          <p id="manual-station-error" class="error" role="alert"></p>
+        </form>
         <div class="capture"><span>Last card UID</span><strong id="station-card-uid" class="uid">Waiting for card…</strong></div>
         <p id="station-result" class="notice" role="status" aria-live="polite" hidden></p>
       </section>
       <footer class="page-foot"><span>NFC desktop workspace</span><span>Card UIDs are shown exactly as read.</span></footer>
     </main>
   </div>
-  <dialog id="card-dialog"><form method="dialog"><button class="dialog-close" aria-label="Close dialog">×</button></form><span class="tile" aria-hidden="true">▣</span><h2 id="dialog-title">Link card</h2><p id="dialog-user"></p><div class="capture"><p id="capture-status">Place a card on the selected reader.</p><strong id="captured-uid" class="uid">Waiting for card…</strong></div><p id="replace-warning" class="warning" hidden></p><p id="dialog-error" class="error" role="alert"></p><div class="dialog-actions"><button id="card-cancel" class="secondary">Cancel</button><button id="link-card" class="primary" disabled>Link card</button></div></dialog>
+  <dialog id="card-dialog"><form method="dialog"><button class="dialog-close" aria-label="Close dialog">×</button></form><span class="tile" aria-hidden="true">▣</span><h2 id="dialog-title">Link card</h2><p id="dialog-user"></p>
+    <div id="manual-assignment" class="manual-panel" hidden><label for="manual-assignment-uid">Card UID</label><input id="manual-assignment-uid" type="text" maxlength="64" autocomplete="off" placeholder="e.g. TEST0001"><p>Enter a UID, then confirm the card assignment below.</p></div>
+    <div class="capture"><p id="capture-status">Place a card on the selected reader.</p><strong id="captured-uid" class="uid">Waiting for card…</strong></div><p id="replace-warning" class="warning" hidden></p><p id="dialog-error" class="error" role="alert"></p><div class="dialog-actions"><button id="card-cancel" class="secondary">Cancel</button><button id="link-card" class="primary" disabled>Link card</button></div></dialog>
   <dialog id="lookup-dialog" aria-labelledby="lookup-title" aria-describedby="lookup-description">
     <span class="tile" aria-hidden="true">⌕</span><h2 id="lookup-title">Find customer by NFC card</h2>
     <p id="lookup-description">Tap a card to see its linked customer. Remove the card before tapping another.</p>
     <label class="lookup-reader-label" for="lookup-reader">NFC reader</label><select id="lookup-reader"></select>
+    <form id="manual-lookup" class="manual-panel" hidden><label for="manual-lookup-uid">Card UID</label><input id="manual-lookup-uid" type="text" maxlength="64" required autocomplete="off" placeholder="e.g. TEST0001"><button id="manual-lookup-tap" class="primary" type="submit">Simulate tap</button></form>
     <div class="capture"><p id="lookup-status" role="status" aria-live="polite">Waiting for card…</p><strong id="lookup-uid" class="uid">Waiting for card…</strong></div>
     <p id="lookup-error" class="error" role="alert"></p>
     <dl id="lookup-details" class="lookup-details" hidden>

@@ -16,7 +16,7 @@ let user, reply = { status: 'success', message: 'Checked in' }, httpStatus = 200
 const calls = [];
 const storage = new Map();
 const localStorage = { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, String(value)), removeItem: key => storage.delete(key) };
-const context = vm.createContext({ console, localStorage, document: { querySelector: select, querySelectorAll: () => [], createElement: node }, Option: function(text, value) { this.textContent = text; this.value = value; }, window: { addEventListener() {}, __TAURI__: { core: { invoke: async () => 'https://example.test' } } }, fetch: async (url, options) => {
+let context = vm.createContext({ console, localStorage, document: { querySelector: select, querySelectorAll: () => [], createElement: node }, Option: function(text, value) { this.textContent = text; this.value = value; }, window: { addEventListener() {}, __TAURI__: { core: { invoke: async () => 'https://example.test' } } }, fetch: async (url, options) => {
   calls.push({ url, options });
   if (url.endsWith('/login')) return { ok: true, status: 200, json: async () => ({ token: user.email, user }) };
   if (url.endsWith('/api/admin/user')) return { ok: httpStatus < 400, status: httpStatus, json: async () => ({ data: user }) };
@@ -24,7 +24,7 @@ const context = vm.createContext({ console, localStorage, document: { querySelec
   if (pending) await pending;
   return { ok: httpStatus < 400, status: httpStatus, json: async () => reply };
 } });
-const testSource = source.replace('render(); connectReader();', '').replace('void restoreSession();', '');
+const testSource = source.replace('render(); connectReader();', '').replace('void restoreSession();', '').replace('void initializeDevMode();', '');
 vm.runInContext(testSource, context);
 const run = code => vm.runInContext(code, context);
 const settle = async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); };
@@ -178,4 +178,113 @@ user = { email: 'changed-role', role: 'client' }; await restart();
 assert.equal(storage.has(savedKey), false, 'Unsupported accounts must not be restored');
 assert.equal(select('#workspace').hidden, true);
 
-console.log('Passed persistent login across app restarts, server validation, outage retry, expiry/access changes, logout, corrupt storage, server changes, plus navigation, RFID lookup, station routing, permissions, and stale response regression checks.');
+// Development-only manual entry must work with no connected reader, using the real API paths.
+context = vm.createContext({ ...context });
+vm.runInContext(testSource, context);
+context.window.__TAURI__.core.invoke = async command => command === 'is_dev_mode' ? false : 'https://example.test';
+await run('initializeDevMode()');
+assert.equal(select('#dev-controls').hidden, true);
+select('#manual-mode').checked = true; select('#manual-mode').change();
+assert.equal(run('isManual()'), false, 'Release builds must reject manual mode');
+context.window.__TAURI__.core.invoke = async command => command === 'is_dev_mode' ? true : 'https://example.test';
+await run('initializeDevMode()'); assert.equal(select('#dev-controls').hidden, false);
+run('showLogin()');
+await login({ email: 'manual-register', role: 'staff', staff_function: 'register' });
+context.status = { readers: [], cards: {}, error: 'No hardware' }; run('handleReaderStatus(status)');
+select('#manual-mode').checked = true; select('#manual-mode').change();
+assert.equal(select('#reader-status').textContent, 'Manual NFC mode');
+context.fixture = { id: 987, mobile_number: '+639171111111', rfid_uid: null };
+run('users = [fixture]; openCard(fixture, $("#card-assignments"))');
+assert.equal(select('#manual-assignment').hidden, false);
+select('#manual-assignment-uid').value = ' '.repeat(3); select('#manual-assignment-uid').input();
+assert.equal(select('#link-card').disabled, true);
+select('#manual-assignment-uid').value = 'X'.repeat(65); select('#manual-assignment-uid').input();
+assert.equal(select('#link-card').disabled, true);
+select('#manual-assignment-uid').value = '  00AB+&  '; select('#manual-assignment-uid').input();
+assert.equal(select('#captured-uid').textContent, '00AB+&');
+assert.equal(select('#link-card').disabled, false, 'Manual assignment needs no hardware');
+context.status = { readers: [], cards: {}, error: 'Reader unavailable' }; run('handleReaderStatus(status)');
+assert.equal(run('capturedUid'), '00AB+&', 'Reader status must not erase manual capture');
+calls.length = 0; reply = { status: 'success' }; await select('#link-card').click();
+assert.equal(calls.length, 1); assert.ok(calls[0].url.endsWith('/users/987/nfc'));
+assert.equal(calls[0].options.method, 'PUT');
+assert.deepEqual(JSON.parse(calls[0].options.body), { rfid_uid: '00AB+&' });
+assert.equal(context.fixture.rfid_uid, '00AB+&');
+select('#rfid-lookup').click(); select('#manual-lookup-uid').value = '00AB+&';
+reply = { data: context.fixture }; calls.length = 0;
+await select('#manual-lookup').submit({ preventDefault() {} });
+assert.ok(calls[0].url.endsWith('rfid_uid=00AB%2B%26'));
+assert.equal(select('#lookup-user-id').textContent, '987'); select('#lookup-dialog').close();
+select('#manual-mode').checked = false; select('#manual-mode').change();
+assert.equal(select('#manual-assignment').hidden, true);
+run('openCard(fixture, $("#card-assignments"))');
+assert.equal(select('#link-card').disabled, true, 'Hardware requirements must return when manual mode is off');
+run('showLogin()');
+for (const station of [1, 2, 3, 4]) {
+  await login({ email: 'manual-station' + station, role: 'staff', staff_function: 'station', station_id: station });
+  select('#manual-mode').checked = true; select('#manual-mode').change();
+  assert.equal(select('#manual-station').hidden, false);
+  select('#manual-station-uid').value = '  TEST0001  ';
+  reply = { status: 'success', message: 'Manual check-in complete' }; calls.length = 0;
+  await select('#manual-station').submit({ preventDefault() {} });
+  assert.equal(calls.length, 1); assert.ok(calls[0].url.endsWith('/stations/check-in'));
+  assert.deepEqual(JSON.parse(calls[0].options.body), { rfid_uid: 'TEST0001' });
+  assert.equal(select('#station-result').textContent, 'Manual check-in complete');
+  await select('#manual-station').submit({ preventDefault() {} });
+  assert.equal(calls.length, 2, 'Each manual submit is a new tap, even for the same UID');
+  select('#manual-station-uid').value = ' '; await select('#manual-station').submit({ preventDefault() {} });
+  assert.equal(calls.length, 2); assert.match(select('#manual-station-error').textContent, /between 1 and 64/);
+  await tap('HARDWARE'); assert.equal(calls.length, 2, 'Ignore physical card taps while manual mode is active');
+  run('showLogin()'); assert.equal(run('isManual()'), false);
+}
+await login({ email: 'manual-busy', role: 'staff', staff_function: 'station', station_id: 4 });
+select('#manual-mode').checked = true; select('#manual-mode').change();
+select('#manual-station-uid').value = 'PENDING'; calls.length = 0;
+pending = new Promise(resolve => { release = resolve; });
+const manualSubmit = select('#manual-station').submit({ preventDefault() {} }); await settle();
+assert.equal(select('#manual-station-tap').disabled, true);
+await select('#manual-station').submit({ preventDefault() {} }); assert.equal(calls.length, 1);
+select('#manual-mode').checked = false; select('#manual-mode').change(); assert.equal(run('isManual()'), true);
+reply = { status: 'prerequisites_not_met', message: 'Complete stations first' }; httpStatus = 422;
+release(); pending = null; await manualSubmit;
+assert.equal(select('#reward-dialog').open, true);
+const beforeRewardDismiss = calls.length; await select('#manual-station').submit({ preventDefault() {} });
+assert.equal(calls.length, beforeRewardDismiss);
+select('#reward-close').click(); assert.equal(select('#manual-station-tap').disabled, false);
+httpStatus = 200; run('showLogin()');
+
+await login({ email: 'redemption-register', role: 'staff', staff_function: 'register' });
+context.profiles = [
+  { id: 1, rfid_uid: null, redeemed: true, completed_station_ids: [1, 2, 3, 4], can_link_nfc: false },
+  { id: 2, rfid_uid: 'READY', redeemed: false, completed_station_ids: [1, 1, 2, 3], can_link_nfc: true },
+  { id: 3, rfid_uid: null, redeemed: false, completed_station_ids: [1], can_link_nfc: true },
+  { id: 4, rfid_uid: null },
+  { id: 5, rfid_uid: 'OLD', completed_station_ids: ['4'] },
+];
+run('users = profiles; filter = "all"; render()');
+let rows = select('#users-body').children;
+assert.equal(rows[0].children[3].children[0].textContent, 'Reward redeemed');
+assert.equal(rows[0].children[4].children[0].textContent, '4/4 stations completed');
+assert.equal(rows[0].children[5].children[0].children[0].textContent, 'Linking closed');
+assert.ok(!rows[0].children[5].children[0].children.some(item => item.textContent === 'Link card'));
+assert.equal(rows[1].children[4].children[0].textContent, 'Ready for reward · 3/4');
+assert.equal(rows[2].children[4].children[0].textContent, '1/4 stations completed');
+assert.equal(rows[3].children[4].children[0].textContent, 'Progress unavailable');
+assert.equal(rows[4].children[3].children[0].textContent, 'Reward redeemed');
+assert.equal(select('#unassigned-count').textContent, 2, 'Redeemed users must not count as awaiting a card');
+run('filter = "unassigned"'); assert.deepEqual(Array.from(run('filteredUsers().map(user => user.id)')), [3, 4]);
+run('filter = "redeemed"'); assert.deepEqual(Array.from(run('filteredUsers().map(user => user.id)')), [1, 5]);
+run('filter = "assigned"'); assert.deepEqual(Array.from(run('filteredUsers().map(user => user.id)')), [2]);
+run('openCard(profiles[0], $("#card-assignments"))');
+assert.equal(select('#card-dialog').open, false, 'Redeemed attendee cannot open assignment dialog');
+select('#manual-mode').checked = true; select('#manual-mode').change();
+run('openCard(profiles[2], $("#card-assignments"))');
+select('#manual-assignment-uid').value = 'STALE'; select('#manual-assignment-uid').input();
+assert.equal(select('#link-card').disabled, false);
+context.profiles[2].redeemed = true; run('updateCapture()');
+assert.equal(select('#link-card').disabled, true, 'Redemption while dialog is open must block linking');
+const beforeBlockedLink = calls.length; await select('#link-card').click();
+assert.equal(calls.length, beforeBlockedLink, 'Redeemed attendee cannot submit an assignment');
+run('showLogin()');
+
+console.log('Passed station progress, redeemed labels/filter, linking guards, card counts, manual NFC, persistent login, and existing station/card regression checks.');
