@@ -2,6 +2,8 @@ const $ = selector => document.querySelector(selector);
 let token = '', apiBase = '', users = [], filter = 'all', page = 1, selectedReader = '', readers = [], readerCards = {}, readerError = '', unlisten;
 let activeUser = null, capturedUid = '', busy = false, loading = false, refreshGeneration = 0, confirmTask = null;
 let opener, account = null, stationJob = null;
+let authenticating = false;
+const sessionStorageKey = 'nfc_staff_session';
 const canAssign = () => account?.role === 'admin' || account?.staff_function === 'register';
 const isStation = () => account?.role !== 'admin' && account?.staff_function === 'station';
 const cardDialog = $('#card-dialog'), confirmDialog = $('#confirm-dialog'), lookupDialog = $('#lookup-dialog');
@@ -117,6 +119,8 @@ async function checkInCard(uid) {
 }
 
 function showLogin(reason = '') {
+  localStorage.removeItem(sessionStorageKey);
+  $('#restore-session').hidden = true;
   token = ''; account = null; stationJob = null; users = []; refreshGeneration++; loading = false;
   $('#station-result').hidden = true; $('#station-result').textContent = ''; $('#station-card-uid').textContent = 'Waiting for card…';
   renderAccount(); $('#admin-name').textContent = 'Staff';
@@ -139,24 +143,71 @@ async function request(path, options = {}) {
   }
   return body;
 }
+function validateAccount(user) {
+  if (!user || !(user.role === 'admin' || ['register', 'station'].includes(user.staff_function))) throw new Error('The server did not return a supported account type.');
+  if (user.role !== 'admin' && user.staff_function === 'station' && !(Number(user.station_id) > 0)) throw new Error('No station is assigned to this account.');
+}
+async function enterWorkspace(user) {
+  account = user; refreshGeneration++;
+  renderWorkspace();
+  $('#password').value = ''; $('#admin-name').textContent = user.email || $('#email').value;
+  renderAccount(user);
+  $('#restore-session').hidden = true;
+  $('#login-screen').hidden = true; $('#workspace').hidden = false;
+  message(''); if (canAssign()) await loadUsers();
+}
+async function restoreSession() {
+  if (!window.__TAURI__ || authenticating) return;
+  authenticating = true;
+  const button = $('#sign-in'), retry = $('#restore-session');
+  button.disabled = true; retry.disabled = true; button.textContent = 'Restoring session…';
+  try {
+    const saved = localStorage.getItem(sessionStorageKey);
+    if (!saved) return;
+    let session;
+    try { session = JSON.parse(saved); } catch { showLogin(); return; }
+    if (!session || typeof session.token !== 'string' || !session.token || typeof session.apiBase !== 'string') { showLogin(); return; }
+    apiBase = await window.__TAURI__.core.invoke('get_api_base_url');
+    // Never send a saved token to a different server after configuration changes.
+    if (session.apiBase !== apiBase) { showLogin(); return; }
+    token = session.token;
+    const body = await request('/api/admin/user');
+    try { validateAccount(body.data); } catch (error) { showLogin(error.message); return; }
+    $('#login-error').textContent = '';
+    await enterWorkspace(body.data);
+  } catch (error) {
+    if (error.status === 401 || error.status === 403) {
+      showLogin('Your session expired or access changed. Please sign in again.');
+    } else {
+      // Keep the saved session during outages so retrying does not require a password.
+      token = ''; account = null;
+      $('#login-error').textContent = `Could not restore your session. ${error.message || error}`;
+      retry.hidden = false;
+    }
+  } finally {
+    authenticating = false;
+    button.disabled = false; retry.disabled = false;
+    button.innerHTML = 'Sign in <span aria-hidden="true">→</span>';
+  }
+}
+$('#restore-session').addEventListener('click', restoreSession);
 $('#login-form').addEventListener('submit', async event => {
-  event.preventDefault(); $('#login-error').textContent = '';
+  event.preventDefault();
+  if (authenticating) return;
+  authenticating = true;
+  $('#restore-session').disabled = true; $('#login-error').textContent = '';
   const button = $('#sign-in'); button.disabled = true; button.textContent = 'Signing in…';
   try {
     if (!window.__TAURI__) throw new Error('Open the desktop app to sign in.');
     apiBase = await window.__TAURI__.core.invoke('get_api_base_url');
     const body = await request('/api/admin/login', { method: 'POST', body: JSON.stringify({ email: $('#email').value.trim(), password: $('#password').value, device_name: 'NFC desktop' }) });
     if (!body.token) throw new Error('The server did not return a login token.');
-    if (!body.user || !(body.user.role === 'admin' || ['register', 'station'].includes(body.user.staff_function))) throw new Error('The server did not return a supported account type.');
-    if (body.user.role !== 'admin' && body.user.staff_function === 'station' && !(Number(body.user.station_id) > 0)) throw new Error('No station is assigned to this account.');
-    token = body.token; account = body.user; refreshGeneration++;
-    renderWorkspace();
-    $('#password').value = ''; $('#admin-name').textContent = body.user?.email || $('#email').value;
-    renderAccount(body.user || {});
-    $('#login-screen').hidden = true; $('#workspace').hidden = false;
-    message(''); if (canAssign()) await loadUsers();
+    validateAccount(body.user);
+    localStorage.setItem(sessionStorageKey, JSON.stringify({ token: body.token, apiBase }));
+    token = body.token;
+    await enterWorkspace(body.user);
   } catch (error) { $('#login-error').textContent = error.message; }
-  finally { button.disabled = false; button.innerHTML = 'Sign in <span aria-hidden="true">→</span>'; }
+  finally { authenticating = false; $('#restore-session').disabled = false; button.disabled = false; button.innerHTML = 'Sign in <span aria-hidden="true">→</span>'; }
 });
 
 async function loadUsers() {
@@ -295,3 +346,4 @@ async function connectReader() {
 }
 window.addEventListener('beforeunload', () => unlisten?.());
 render(); connectReader();
+void restoreSession();
