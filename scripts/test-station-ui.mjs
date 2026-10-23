@@ -16,11 +16,11 @@ let user, reply = { status: 'success', message: 'Checked in' }, httpStatus = 200
 const calls = [];
 const storage = new Map();
 const localStorage = { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, String(value)), removeItem: key => storage.delete(key) };
-let context = vm.createContext({ URL, console, localStorage, document: { querySelector: select, querySelectorAll: () => [], createElement: node }, Option: function(text, value) { this.textContent = text; this.value = value; }, window: { addEventListener() {}, __TAURI__: { core: { invoke: async () => 'https://example.test' } } }, fetch: async (url, options) => {
+let context = vm.createContext({ URL, URLSearchParams, setTimeout, clearTimeout, console, localStorage, document: { querySelector: select, querySelectorAll: () => [], createElement: node }, Option: function(text, value) { this.textContent = text; this.value = value; }, window: { addEventListener() {}, __TAURI__: { core: { invoke: async () => 'https://example.test' } } }, fetch: async (url, options) => {
   calls.push({ url, options });
   if (url.endsWith('/login')) return { ok: true, status: 200, json: async () => ({ token: user.email, user }) };
   if (url.endsWith('/api/admin/user')) return { ok: httpStatus < 400, status: httpStatus, json: async () => ({ data: user }) };
-  if (url.includes('/users?')) return { ok: true, status: 200, json: async () => ({ data: [], last_page: 1 }) };
+  if (url.includes('/users?')) return { ok: true, status: 200, json: async () => ({ data: [], current_page: 1, last_page: 1, total: 0, counts: { all: 0, assigned: 0, unassigned: 0, redeemed: 0 } }) };
   if (pending) await pending;
   return { ok: httpStatus < 400, status: httpStatus, json: async () => reply };
 } });
@@ -206,7 +206,8 @@ assert.equal(select('#link-card').disabled, false, 'Manual assignment needs no h
 context.status = { readers: [], cards: {}, error: 'Reader unavailable' }; run('handleReaderStatus(status)');
 assert.equal(run('capturedUid'), '00AB+&', 'Reader status must not erase manual capture');
 calls.length = 0; reply = { status: 'success' }; await select('#link-card').click();
-assert.equal(calls.length, 1); assert.ok(calls[0].url.endsWith('/users/987/nfc'));
+assert.equal(calls.length, 2); assert.ok(calls[0].url.endsWith('/users/987/nfc'));
+assert.ok(calls[1].url.includes('/api/admin/users?'), 'Assignment must reload the server page and counts');
 assert.equal(calls[0].options.method, 'PUT');
 assert.deepEqual(JSON.parse(calls[0].options.body), { rfid_uid: '00AB+&' });
 assert.equal(context.fixture.rfid_uid, '00AB+&');
@@ -261,7 +262,7 @@ context.profiles = [
   { id: 4, rfid_uid: null },
   { id: 5, rfid_uid: 'OLD', completed_station_ids: ['4'] },
 ];
-run('users = profiles; filter = "all"; render()');
+run('users = profiles; listCounts = { all: 5, assigned: 1, unassigned: 2, redeemed: 2 }; filter = "all"; render()');
 let rows = select('#users-body').children;
 assert.equal(rows[0].children[3].children[0].textContent, 'Reward redeemed');
 assert.equal(rows[0].children[4].children[0].textContent, '4/4 stations completed');
@@ -272,9 +273,6 @@ assert.equal(rows[2].children[4].children[0].textContent, '1/4 stations complete
 assert.equal(rows[3].children[4].children[0].textContent, 'Progress unavailable');
 assert.equal(rows[4].children[3].children[0].textContent, 'Reward redeemed');
 assert.equal(select('#unassigned-count').textContent, 2, 'Redeemed users must not count as awaiting a card');
-run('filter = "unassigned"'); assert.deepEqual(Array.from(run('filteredUsers().map(user => user.id)')), [3, 4]);
-run('filter = "redeemed"'); assert.deepEqual(Array.from(run('filteredUsers().map(user => user.id)')), [1, 5]);
-run('filter = "assigned"'); assert.deepEqual(Array.from(run('filteredUsers().map(user => user.id)')), [2]);
 run('openCard(profiles[0], $("#card-assignments"))');
 assert.equal(select('#card-dialog').open, false, 'Redeemed attendee cannot open assignment dialog');
 select('#manual-mode').checked = true; select('#manual-mode').change();

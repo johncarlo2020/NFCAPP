@@ -3,6 +3,8 @@ let token = '', apiBase = '', users = [], filter = 'all', page = 1, selectedRead
 let activeUser = null, capturedUid = '', busy = false, loading = false, refreshGeneration = 0, confirmTask = null;
 let opener, account = null, stationJob = null;
 let authenticating = false;
+let searchTimer, listTotal = 0, listLastPage = 1;
+let listCounts = { all: 0, assigned: 0, unassigned: 0, redeemed: 0 };
 let devMode = false, manualEnabled = false;
 const isManual = () => devMode && manualEnabled;
 const readerReady = () => isManual() || (Boolean(selectedReader) && !readerError);
@@ -125,6 +127,9 @@ async function checkInCard(uid) {
 }
 
 function showLogin(reason = '') {
+  clearTimeout(searchTimer);
+  listTotal = 0; listLastPage = 1; page = 1;
+  listCounts = { all: 0, assigned: 0, unassigned: 0, redeemed: 0 };
   localStorage.removeItem(sessionStorageKey);
   $('#restore-session').hidden = true;
   token = ''; account = null; stationJob = null; users = []; refreshGeneration++; loading = false;
@@ -189,7 +194,7 @@ function validateAccount(user) {
   if (user.role !== 'admin' && user.staff_function === 'station' && !(Number(user.station_id) > 0)) throw new Error('No station is assigned to this account.');
 }
 async function enterWorkspace(user) {
-  account = user; refreshGeneration++;
+  account = user; refreshGeneration++; page = 1;
   renderWorkspace();
   $('#password').value = ''; $('#admin-name').textContent = user.email || $('#email').value;
   renderAccount(user);
@@ -253,19 +258,23 @@ $('#login-form').addEventListener('submit', async event => {
 
 async function loadUsers() {
   if (!token || !canAssign()) return;
+  clearTimeout(searchTimer);
   const generation = ++refreshGeneration;
-  loading = true; $('#loading').textContent = 'Refreshing users…'; $('#refresh').disabled = true; render();
+  const params = new URLSearchParams({ per_page: $('#page-size').value, page: String(page), assignment_status: filter });
+  const search = $('#search').value.trim();
+  if (search) params.set('search', search);
+  loading = true; users = []; $('#loading').textContent = 'Refreshing users…'; $('#refresh').disabled = true; render();
   try {
-    const result = []; let nextPage = 1, lastPage = 1;
-    do {
-      const body = await request(`/api/admin/users?per_page=100&page=${nextPage}`);
-      if (generation !== refreshGeneration) return;
-      if (!Array.isArray(body.data)) throw new Error('The server returned an invalid user list.');
-      result.push(...body.data); lastPage = Number(body.last_page || 1);
-      if (!Number.isInteger(lastPage) || lastPage < 1) throw new Error('The server returned invalid pagination.');
-      nextPage++;
-    } while (nextPage <= lastPage);
-    users = [...new Map(result.map(user => [user.id, user])).values()];
+    const body = await request(`/api/admin/users?${params}`);
+    if (generation !== refreshGeneration) return;
+    if (!Array.isArray(body.data)) throw new Error('The server returned an invalid user list.');
+    if (!Number.isInteger(body.total) || body.total < 0 || !Number.isInteger(body.current_page) || body.current_page < 1 || !Number.isInteger(body.last_page) || body.last_page < 1) throw new Error('The server returned invalid pagination.');
+    if (!body.counts || ['all', 'assigned', 'unassigned', 'redeemed'].some(key => !Number.isInteger(body.counts[key]) || body.counts[key] < 0)) throw new Error('The server did not return valid assignment counts. Update the server API.');
+    listTotal = body.total; listLastPage = body.last_page; listCounts = body.counts;
+    page = body.current_page;
+    // Removing the last result on a page can reduce the number of pages.
+    if (page > listLastPage) { page = listLastPage; return await loadUsers(); }
+    users = body.data;
   } catch (error) { if (token && generation === refreshGeneration) message(`Could not refresh users. ${error.message}`, true); }
   finally {
     if (generation === refreshGeneration) { loading = false; $('#loading').textContent = ''; $('#refresh').disabled = false; render(); }
@@ -282,32 +291,22 @@ function stationProgress(user) {
   const completed = new Set(user.completed_station_ids.map(Number).filter(id => [1, 2, 3, 4].includes(id)));
   return completed.size === 3 && [1, 2, 3].every(id => completed.has(id)) ? 'Ready for reward · 3/4' : `${completed.size}/4 stations completed`;
 }
-function filteredUsers() {
-  const search = $('#search').value.trim().toLowerCase();
-  return users.filter(user => {
-    const assigned = Boolean(user.rfid_uid);
-    const mobile = String(user.mobile_number || user.code || '').toLowerCase();
-    const matches = filter === 'all' || (filter === 'redeemed' ? hasRedeemed(user) : filter === 'assigned' ? assigned && !hasRedeemed(user) : !assigned && canLinkUser(user));
-    return matches && (!search || String(user.id) === search || mobile.includes(search));
-  });
-}
 function cell(row, text, className = '') {
   const td = document.createElement('td'); td.textContent = text; td.className = className; row.append(td); return td;
 }
 function render() {
-  $('#total-count').textContent = users.length; $('#assigned-count').textContent = users.filter(user => user.rfid_uid && !hasRedeemed(user)).length;
-  $('#unassigned-count').textContent = users.filter(user => !user.rfid_uid && canLinkUser(user)).length; $('#all-filter-count').textContent = users.length;
-  const filtered = filteredUsers(), size = Number($('#page-size').value), pages = Math.max(1, Math.ceil(filtered.length / size));
-  page = Math.min(page, pages); const start = (page - 1) * size;
+  $('#total-count').textContent = listCounts.all; $('#assigned-count').textContent = listCounts.assigned;
+  $('#unassigned-count').textContent = listCounts.unassigned; $('#all-filter-count').textContent = listCounts.all;
+  const size = Number($('#page-size').value), start = (page - 1) * size;
   $('#users-body').replaceChildren();
-  if (!filtered.length) {
+  if (!users.length) {
     const row = document.createElement('tr'); const td = cell(row, '', 'empty'); td.colSpan = 6;
     const tile = document.createElement('span'); tile.className = 'tile'; tile.textContent = '▣'; tile.setAttribute('aria-hidden', 'true');
     const title = document.createElement('strong'); title.textContent = loading ? 'Loading users…' : 'No users found';
     const description = document.createElement('p'); description.textContent = loading ? 'Fetching the latest card assignments.' : 'Try a different search or assignment filter.';
     td.append(tile, title, description); $('#users-body').append(row);
   }
-  for (const user of filtered.slice(start, start + size)) {
+  for (const user of users) {
     const row = document.createElement('tr'); cell(row, `#${user.id}`); cell(row, user.mobile_number || user.code || '—'); cell(row, user.rfid_uid || '—', 'uid');
     const redeemed = hasRedeemed(user);
     const status = cell(row, ''); const badge = document.createElement('span'); badge.className = `badge ${redeemed || user.rfid_uid ? 'success' : 'neutral'}`; badge.textContent = redeemed ? 'Reward redeemed' : user.rfid_uid ? 'Assigned' : 'Unassigned'; status.append(badge);
@@ -319,15 +318,20 @@ function render() {
     if (user.rfid_uid) { const unlink = document.createElement('button'); unlink.className = 'danger'; unlink.disabled = loading; unlink.textContent = 'Unassign'; unlink.setAttribute('aria-label', `Unassign card for user ${user.id}`); unlink.addEventListener('click', () => openUnassign(user, unlink)); group.append(unlink); }
     actions.append(group); $('#users-body').append(row);
   }
-  $('#result-count').textContent = filtered.length ? `${start + 1}–${Math.min(start + size, filtered.length)} of ${filtered.length} users` : '0 users';
-  $('#page-label').textContent = `Page ${page} of ${pages}`; $('#previous').disabled = page <= 1; $('#next').disabled = page >= pages;
+  $('#result-count').textContent = loading ? 'Loading users…' : users.length ? `${start + 1}–${start + users.length} of ${listTotal} users` : '0 users';
+  $('#page-label').textContent = `Page ${page} of ${listLastPage}`; $('#previous').disabled = loading || page <= 1; $('#next').disabled = loading || page >= listLastPage;
 }
 $('#refresh').addEventListener('click', () => { message(''); loadUsers(); });
-$('#search').addEventListener('input', () => { page = 1; render(); });
-$('#page-size').addEventListener('change', () => { page = 1; render(); });
-$('#previous').addEventListener('click', () => { page--; render(); }); $('#next').addEventListener('click', () => { page++; render(); });
+$('#search').addEventListener('input', () => {
+  clearTimeout(searchTimer); refreshGeneration++; page = 1; users = [];
+  loading = true; render();
+  searchTimer = setTimeout(() => { message(''); void loadUsers(); }, 300);
+});
+$('#page-size').addEventListener('change', () => { page = 1; message(''); void loadUsers(); });
+$('#previous').addEventListener('click', () => { if (!loading && page > 1) { page--; message(''); void loadUsers(); } });
+$('#next').addEventListener('click', () => { if (!loading && page < listLastPage) { page++; message(''); void loadUsers(); } });
 document.querySelectorAll('[data-filter]').forEach(button => button.addEventListener('click', () => {
-  filter = button.dataset.filter; page = 1; document.querySelectorAll('[data-filter]').forEach(item => item.setAttribute('aria-pressed', String(item === button))); render();
+  filter = button.dataset.filter; page = 1; document.querySelectorAll('[data-filter]').forEach(item => item.setAttribute('aria-pressed', String(item === button))); message(''); void loadUsers();
 }));
 function openCard(user, button) {
   if (!canAssign()) return;
@@ -355,7 +359,7 @@ $('#link-card').addEventListener('click', async () => {
   const user = activeUser, uid = capturedUid; busy = true; updateCapture(); $('#card-cancel').disabled = true; $('.dialog-close').disabled = true; $('#link-card').textContent = 'Linking…';
   try {
     await request(`/api/admin/users/${encodeURIComponent(user.id)}/nfc`, { method: 'PUT', body: JSON.stringify({ rfid_uid: uid }) });
-    user.rfid_uid = uid; render(); message(`Card ${uid} assigned to user #${user.id}.`); cardDialog.close();
+    user.rfid_uid = uid; message(`Card ${uid} assigned to user #${user.id}.`); cardDialog.close(); await loadUsers();
   } catch (error) { $('#dialog-error').textContent = error.message; }
   finally { busy = false; $('#card-cancel').disabled = false; $('.dialog-close').disabled = false; $('#link-card').textContent = user.rfid_uid ? 'Confirm replacement' : 'Link card'; updateCapture(); }
 });
@@ -365,7 +369,7 @@ function openConfirm(title, description, label, task, button) {
 function openUnassign(user, button) {
   if (!canAssign()) return;
   openConfirm('Unassign this card?', `Card ${user.rfid_uid} will be removed from user #${user.id}. You can link a card again later.`, 'Yes, unassign', async () => {
-    await request(`/api/admin/users/${encodeURIComponent(user.id)}/nfc`, { method: 'DELETE' }); user.rfid_uid = null; render(); message(`Card unassigned from user #${user.id}.`);
+    await request(`/api/admin/users/${encodeURIComponent(user.id)}/nfc`, { method: 'DELETE' }); user.rfid_uid = null; message(`Card unassigned from user #${user.id}.`); await loadUsers();
   }, button);
 }
 $('#logout').addEventListener('click', event => openConfirm('Log out?', 'You will need to sign in again to use the workspace.', 'Yes, log out', async () => { await request('/api/admin/logout', { method: 'POST' }); showLogin(); }, event.currentTarget));
