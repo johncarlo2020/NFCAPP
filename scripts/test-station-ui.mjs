@@ -16,7 +16,7 @@ let user, reply = { status: 'success', message: 'Checked in' }, httpStatus = 200
 const calls = [];
 const storage = new Map();
 const localStorage = { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, String(value)), removeItem: key => storage.delete(key) };
-let context = vm.createContext({ console, localStorage, document: { querySelector: select, querySelectorAll: () => [], createElement: node }, Option: function(text, value) { this.textContent = text; this.value = value; }, window: { addEventListener() {}, __TAURI__: { core: { invoke: async () => 'https://example.test' } } }, fetch: async (url, options) => {
+let context = vm.createContext({ URL, console, localStorage, document: { querySelector: select, querySelectorAll: () => [], createElement: node }, Option: function(text, value) { this.textContent = text; this.value = value; }, window: { addEventListener() {}, __TAURI__: { core: { invoke: async () => 'https://example.test' } } }, fetch: async (url, options) => {
   calls.push({ url, options });
   if (url.endsWith('/login')) return { ok: true, status: 200, json: async () => ({ token: user.email, user }) };
   if (url.endsWith('/api/admin/user')) return { ok: httpStatus < 400, status: httpStatus, json: async () => ({ data: user }) };
@@ -51,7 +51,7 @@ await tap(''); reply = { status: 'duplicate', message: 'Already checked in' }; a
 assert.equal(select('#station-result').textContent, 'Already checked in');
 assert.equal(select('#reward-dialog').open, false, 'Duplicate check-in must not show ineligibility');
 await tap(''); reply = { status: 'prerequisites_not_met', message: 'Complete stations first' }; httpStatus = 422; await tap('CARD1');
-assert.equal(select('#station-result').className, 'notice error'); assert.equal(select('#station-result').textContent, reply.message);
+assert.equal(select('#station-result').className, 'notice error'); assert.ok(select('#station-result').textContent.startsWith(reply.message));
 assert.equal(select('#reward-dialog').open, true); assert.equal(select('#reward-card-uid').textContent, 'CARD1');
 const modalCalls = calls.length; await tap(''); await tap('CARD2'); assert.equal(calls.length, modalCalls, 'Dismiss the reward modal before processing another card');
 select('#reward-close').click(); assert.equal(select('#reward-dialog').open, false);
@@ -87,7 +87,7 @@ await tap('00AB+&'); assert.equal(calls.length, 1); assert.ok(calls[0].url.endsW
 assert.equal(select('#lookup-details').hidden, false); assert.equal(select('#lookup-user-id').textContent, '123'); assert.equal(select('#lookup-card').textContent, '00AB+&'); assert.equal(select('#lookup-name').textContent, '<script>customer</script>');
 await tap('00AB+&'); assert.equal(calls.length, 1);
 await tap(''); reply = { message: 'Not found' }; httpStatus = 404; await tap('UNKNOWN'); assert.equal(select('#lookup-details').hidden, true); assert.equal(select('#lookup-user-id').textContent, ''); assert.match(select('#lookup-error').textContent, /No customer/);
-await tap(''); httpStatus = 403; reply = { message: 'Not authorized' }; await tap('FORBIDDEN'); assert.equal(select('#lookup-error').textContent, 'Not authorized');
+await tap(''); httpStatus = 403; reply = { message: 'Not authorized' }; await tap('FORBIDDEN'); assert.ok(select('#lookup-error').textContent.startsWith('Not authorized'));
 await tap(''); httpStatus = 200; reply = { data: null }; await tap('INVALID'); assert.match(select('#lookup-error').textContent, /invalid customer/);
 await tap(''); pending = new Promise(resolve => { release = resolve; }); reply = { data: { id: 555, rfid_uid: 'PENDING' } }; await tap('PENDING');
 select('#lookup-dialog').close(); release(); pending = null; await settle(); assert.equal(select('#lookup-details').hidden, true); assert.equal(select('#lookup-user-id').textContent, '');

@@ -118,7 +118,7 @@ async function checkInCard(uid) {
     if (stationJob !== job || token !== job.token) return;
     $('#station-result').className = 'notice error';
     $('#station-result').textContent = error.status >= 500 || !error.status
-      ? 'Check-in outcome uncertain. Verify the result before tapping again.'
+      ? `Check-in outcome uncertain. Verify the result before tapping again. ${error.message}`
       : error.message;
     showRewardIneligible(error.apiStatus, uid);
   } finally { if (stationJob === job) stationJob = null; renderManualControls(); }
@@ -140,16 +140,47 @@ function showLogin(reason = '') {
 }
 async function request(path, options = {}) {
   const requestToken = token;
-  const response = await fetch(`${apiBase}${path}`, {
-    ...options,
-    headers: { Accept: 'application/json', 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-  });
-  const body = response.status === 204 ? {} : await response.json().catch(() => ({}));
+  const started = Date.now();
+  const method = (options.method || 'GET').toUpperCase();
+  // Exclude credentials, query values (including scanned UIDs), and fragments.
+  const endpoint = new URL(`${apiBase}${path}`);
+  endpoint.username = ''; endpoint.password = ''; endpoint.search = ''; endpoint.hash = '';
+  const origin = window.location?.origin || 'unavailable';
+  const details = response => [
+    `Request: ${method} ${endpoint.href}.`,
+    `App origin: ${origin}.`,
+    `Elapsed: ${Date.now() - started} ms.`,
+    response ? `HTTP: ${response.status}${response.statusText ? ` ${response.statusText}` : ''}. Content-Type: ${response.headers?.get('content-type') || 'not provided'}.`
+      : 'HTTP status: unavailable (no response accessible to the app).',
+  ].join(' ');
+  let response;
+  try {
+    response = await fetch(`${apiBase}${path}`, {
+      ...options,
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    });
+  } catch (cause) {
+    const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
+    const reason = cause?.name === 'AbortError' ? 'The request was cancelled.'
+      : offline ? 'The device reports that it is offline.'
+      : 'The browser could not complete the request; it does not expose the exact network cause.';
+    throw new Error(`Fetch failed. ${reason} ${details()} Check NFC_API_BASE_URL and server availability, DNS, firewall/proxy settings, and the HTTPS certificate. The API must allow the app origin through CORS, including OPTIONS preflight, the request method, and the Authorization and Content-Type headers. Check the webview Network/Console and server logs to distinguish connection, TLS, CORS, or blocked-content failures.`, { cause });
+  }
+  let body = {}, invalidJson = false;
+  if (response.status !== 204) {
+    try { body = await response.json(); }
+    catch { invalidJson = true; }
+    if (!body || typeof body !== 'object' || Array.isArray(body)) { body = {}; invalidJson = true; }
+  }
   if (!response.ok) {
     if (response.status === 401 && token && token === requestToken) showLogin('Your session expired. Please sign in again.');
     const errors = Object.values(body.errors || {}).flat().join(' ');
-    const error = new Error(errors || body.message || (response.status === 429 ? 'Too many attempts. Please try again later.' : `Request failed (${response.status}).`));
+    const summary = errors || body.message || (response.status === 429 ? 'Too many attempts. Please try again later.' : `Request failed (${response.status}).`);
+    const error = new Error(`${summary} ${details(response)}${invalidJson ? ' The response was not a valid JSON object. Check the API route, reverse proxy, and server logs.' : ''}`);
     error.status = response.status; error.apiStatus = body.status; throw error;
+  }
+  if (invalidJson) {
+    throw new Error(`The API returned an invalid JSON response. ${details(response)} Expected a JSON object. Check the API route and server/proxy logs; an HTML login or error page may have been returned.`);
   }
   return body;
 }
