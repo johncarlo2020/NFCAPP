@@ -5,6 +5,7 @@ let opener, account = null, stationJob = null;
 let authenticating = false;
 let searchTimer, listTotal = 0, listLastPage = 1;
 let listCounts = { all: 0, assigned: 0, unassigned: 0, redeemed: 0 };
+let registrationClient, registrationTimer, registrationDirty = false, registrationLastRefresh = 0;
 let devMode = false, manualEnabled = false;
 const isManual = () => devMode && manualEnabled;
 const readerReady = () => isManual() || (Boolean(selectedReader) && !readerError);
@@ -127,7 +128,9 @@ async function checkInCard(uid) {
 }
 
 function showLogin(reason = '') {
+  stopRegistrationUpdates();
   clearTimeout(searchTimer);
+  searchTimer = undefined;
   listTotal = 0; listLastPage = 1; page = 1;
   listCounts = { all: 0, assigned: 0, unassigned: 0, redeemed: 0 };
   localStorage.removeItem(sessionStorageKey);
@@ -193,14 +196,86 @@ function validateAccount(user) {
   if (!user || !(user.role === 'admin' || ['register', 'station'].includes(user.staff_function))) throw new Error('The server did not return a supported account type.');
   if (user.role !== 'admin' && user.staff_function === 'station' && !(Number(user.station_id) > 0)) throw new Error('No station is assigned to this account.');
 }
-async function enterWorkspace(user) {
+async function enterWorkspace(user, realtime) {
   account = user; refreshGeneration++; page = 1;
   renderWorkspace();
   $('#password').value = ''; $('#admin-name').textContent = user.email || $('#email').value;
   renderAccount(user);
   $('#restore-session').hidden = true;
   $('#login-screen').hidden = true; $('#workspace').hidden = false;
-  message(''); if (canAssign()) await loadUsers();
+  message(''); startRegistrationUpdates(realtime); if (canAssign()) await loadUsers();
+}
+
+function stopRegistrationUpdates() {
+  const client = registrationClient;
+  registrationClient = undefined;
+  client?.disconnect();
+  clearTimeout(registrationTimer); registrationTimer = undefined;
+  registrationDirty = false; registrationLastRefresh = 0;
+  $('#registration-live-status').textContent = '';
+}
+function queueRegistrationRefresh() {
+  if (!token || !canAssign()) return;
+  registrationDirty = true;
+  if (registrationTimer !== undefined) return;
+  registrationTimer = setTimeout(flushRegistrationRefresh, Math.max(500, 5000 - (Date.now() - registrationLastRefresh)));
+}
+async function flushRegistrationRefresh() {
+  registrationTimer = undefined;
+  if (!registrationDirty || !token || !canAssign()) return;
+  // Wait for active searches and dialogs so live updates do not interrupt card work.
+  if (loading || busy || authenticating || searchTimer !== undefined || cardDialog.open || confirmDialog.open || lookupDialog.open) {
+    registrationTimer = setTimeout(flushRegistrationRefresh, 500);
+    return;
+  }
+  registrationDirty = false; registrationLastRefresh = Date.now();
+  await loadUsers();
+  if (registrationDirty) queueRegistrationRefresh();
+}
+function startRegistrationUpdates(config) {
+  stopRegistrationUpdates();
+  if (!token || !canAssign()) return;
+  const status = $('#registration-live-status');
+  if (!config?.key || !config.cluster || typeof window.Pusher !== 'function') {
+    status.textContent = 'Live updates unavailable. Search again to get the latest users.';
+    return;
+  }
+  const sessionToken = token;
+  status.textContent = 'Connecting live registration updates…';
+  try {
+    const client = new window.Pusher(config.key, {
+      cluster: config.cluster, forceTLS: true,
+      // Use the existing bearer-token API rather than browser session cookies.
+      channelAuthorization: { customHandler: async ({ socketId, channelName }, callback) => {
+        if (registrationClient !== client || token !== sessionToken) { callback(new Error('Session changed'), null); return; }
+        try {
+          const auth = await request('/api/admin/broadcasting/auth', { method: 'POST', body: JSON.stringify({ socket_id: socketId, channel_name: channelName }) });
+          if (registrationClient !== client || token !== sessionToken) { callback(new Error('Session changed'), null); return; }
+          callback(null, auth);
+        } catch (error) { callback(error, null); }
+      } },
+    });
+    registrationClient = client;
+    const current = () => registrationClient === client && token === sessionToken;
+    client.connection.bind('state_change', ({ current: state }) => {
+      if (!current() || state === 'connected') return;
+      status.textContent = 'Live updates disconnected. Search again to get the latest users.';
+    });
+    const channel = client.subscribe('private-nfc-registrations');
+    channel.bind('pusher:subscription_succeeded', () => {
+      if (!current()) return;
+      status.textContent = 'New registrations update automatically.';
+      // Catch registrations missed while initially connecting or reconnecting.
+      queueRegistrationRefresh();
+    });
+    channel.bind('attendee.registered', () => { if (current()) queueRegistrationRefresh(); });
+    channel.bind('pusher:subscription_error', () => {
+      if (current()) status.textContent = 'Live updates unavailable. Search again to get the latest users.';
+    });
+  } catch {
+    stopRegistrationUpdates();
+    status.textContent = 'Live updates unavailable. Search again to get the latest users.';
+  }
 }
 async function restoreSession() {
   if (!window.__TAURI__ || authenticating) return;
@@ -220,7 +295,7 @@ async function restoreSession() {
     const body = await request('/api/admin/user');
     try { validateAccount(body.data); } catch (error) { showLogin(error.message); return; }
     $('#login-error').textContent = '';
-    await enterWorkspace(body.data);
+    await enterWorkspace(body.data, body.realtime);
   } catch (error) {
     if (error.status === 401 || error.status === 403) {
       showLogin('Your session expired or access changed. Please sign in again.');
@@ -251,7 +326,7 @@ $('#login-form').addEventListener('submit', async event => {
     validateAccount(body.user);
     localStorage.setItem(sessionStorageKey, JSON.stringify({ token: body.token, apiBase }));
     token = body.token;
-    await enterWorkspace(body.user);
+    await enterWorkspace(body.user, body.realtime);
   } catch (error) { $('#login-error').textContent = error.message; }
   finally { authenticating = false; $('#restore-session').disabled = false; button.disabled = false; button.innerHTML = 'Sign in <span aria-hidden="true">→</span>'; }
 });
@@ -259,11 +334,12 @@ $('#login-form').addEventListener('submit', async event => {
 async function loadUsers() {
   if (!token || !canAssign()) return;
   clearTimeout(searchTimer);
+  searchTimer = undefined;
   const generation = ++refreshGeneration;
   const params = new URLSearchParams({ per_page: $('#page-size').value, page: String(page), assignment_status: filter });
   const search = $('#search').value.trim();
   if (search) params.set('search', search);
-  loading = true; users = []; $('#loading').textContent = 'Refreshing users…'; $('#refresh').disabled = true; render();
+  loading = true; users = []; $('#loading').textContent = 'Loading users…'; render();
   try {
     const body = await request(`/api/admin/users?${params}`);
     if (generation !== refreshGeneration) return;
@@ -275,9 +351,9 @@ async function loadUsers() {
     // Removing the last result on a page can reduce the number of pages.
     if (page > listLastPage) { page = listLastPage; return await loadUsers(); }
     users = body.data;
-  } catch (error) { if (token && generation === refreshGeneration) message(`Could not refresh users. ${error.message}`, true); }
+  } catch (error) { if (token && generation === refreshGeneration) message(`Could not load users. ${error.message}`, true); }
   finally {
-    if (generation === refreshGeneration) { loading = false; $('#loading').textContent = ''; $('#refresh').disabled = false; render(); }
+    if (generation === refreshGeneration) { loading = false; $('#loading').textContent = ''; render(); }
   }
 }
 function hasRedeemed(user) {
@@ -321,7 +397,6 @@ function render() {
   $('#result-count').textContent = loading ? 'Loading users…' : users.length ? `${start + 1}–${start + users.length} of ${listTotal} users` : '0 users';
   $('#page-label').textContent = `Page ${page} of ${listLastPage}`; $('#previous').disabled = loading || page <= 1; $('#next').disabled = loading || page >= listLastPage;
 }
-$('#refresh').addEventListener('click', () => { message(''); loadUsers(); });
 $('#search').addEventListener('input', () => {
   clearTimeout(searchTimer); refreshGeneration++; page = 1; users = [];
   loading = true; render();
@@ -409,7 +484,7 @@ async function connectReader() {
   try { unlisten = await window.__TAURI__.event.listen('nfc-status', ({ payload }) => handleReaderStatus(payload)); handleReaderStatus(await window.__TAURI__.core.invoke('get_nfc_status')); }
   catch (error) { readerError = `Cannot connect to the reader: ${error}`; renderReader(); }
 }
-window.addEventListener('beforeunload', () => unlisten?.());
+window.addEventListener('beforeunload', () => { stopRegistrationUpdates(); unlisten?.(); });
 render(); connectReader();
 void restoreSession();
 void initializeDevMode();

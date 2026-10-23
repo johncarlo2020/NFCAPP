@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>NFC Staff Workspace</title><link rel="stylesheet" href="admin.css">
+  <script src="assets/vendor/pusher.min.js"></script>
   <script type="module" src="admin.js"></script>
 </head>
 <body>
@@ -36,7 +37,7 @@
         <p>Enter a card UID to test without hardware. Assignments and check-ins use the configured API and update its data.</p>
       </section>
       <section id="assignments" class="users-card">
-        <div class="card-heading"><div><h2>Users & cards</h2><p>Select a user to link or manage their NFC card.</p></div><button id="refresh" class="secondary">↻ &nbsp; Refresh</button></div>
+        <div class="card-heading"><div><h2>Users & cards</h2><p>Select a user to link or manage their NFC card.</p><p id="registration-live-status" role="status"></p></div></div>
         <div class="toolbar"><div class="search"><span aria-hidden="true">⌕</span><label class="sr-only" for="search">Search mobile number, exact user ID, or exact card UID</label><input type="search" id="search" maxlength="255" placeholder="Search mobile, user ID, or card UID…"></div></div>
         <div class="filter-row"><div class="filters" role="group" aria-label="Assignment status"><button data-filter="all" aria-pressed="true">All <span id="all-filter-count">0</span></button><button data-filter="assigned" aria-pressed="false">Assigned</button><button data-filter="unassigned" aria-pressed="false">Unassigned</button><button data-filter="redeemed" aria-pressed="false">Reward redeemed</button></div><span id="loading" role="status"></span></div>
         <div class="table-wrap"><table><thead><tr><th>USER ID</th><th>MOBILE NUMBER</th><th>NFC CARD UID</th><th>CARD STATUS</th><th>STATION PROGRESS</th><th class="align-right">ACTION</th></tr></thead><tbody id="users-body"></tbody></table></div>

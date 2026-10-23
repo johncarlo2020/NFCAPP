@@ -313,3 +313,20 @@ The desktop requests one page at a time with `search`, `assignment_status`, `per
 The normal pagination response also includes `counts: {"all": 100, "assigned": 30, "unassigned": 50, "redeemed": 20}`. These are global attendee counts, independent of search, assignment filter, and pagination; admins and staff are excluded. `total` is the number matching the current search and filter. `per_page` is 1–100 and `page` is a positive integer; invalid parameters return 422. Results are ordered by descending user ID.
 
 The desktop debounces search by 300 ms, resets to page 1 when search/filter/page size changes, and ignores outdated responses. It reloads the current page and counts after linking or unlinking a card. Deploy this API update before using the updated desktop app.
+
+
+## Live attendee registrations
+
+New registrations broadcast `attendee.registered` on the private Pusher channel `private-nfc-registrations`, after the database transaction commits. The event contains only `user_id`. It is triggered by Laravel's existing `Registered` event; creating staff/admin accounts does not notify registration desktops. A broadcast outage is logged and does not fail registration.
+
+Login and `GET /api/admin/user` now include `realtime: {"key": "PUBLIC_PUSHER_KEY", "cluster": "ap1"}` for admins and registration staff when broadcasting is configured. Otherwise `realtime` is null, including for station staff. Pusher secrets and app IDs are not returned. The desktop bundles Pusher JS 8.2.0 locally under `src/assets/vendor`, with its license.
+
+Authorize the private channel through `POST /api/admin/broadcasting/auth` with the existing bearer token and JSON body `{"socket_id":"123.456","channel_name":"private-nfc-registrations"}`. The response is Pusher's signed `auth` object. Admins and valid registration staff need `nfc:manage`; station staff and attendees receive 403. Other channel names and malformed socket IDs return 422. Unconfigured broadcasting returns 503. No browser session cookie or CSRF token is required for this API route.
+
+The desktop reloads only its current search/filter/page after notification. Events arriving together are batched; automatic registration reloads are capped at one per five seconds per desktop. Reloads wait for an active search, list request, or card/lookup/confirmation dialog to finish. A notification during an in-flight reload schedules a later update. Successful subscription/reconnection also schedules a catch-up read. Signing out disconnects and clears pending updates. There is no periodic API polling. Each connection normally uses one channel-authorization request plus one catch-up list request; each event batch uses one list request.
+
+A newly registered attendee appears only when matching the current search/filter and page; global summary counts still update. The list header shows the live-update connection state. If live updates are unavailable, changing the search, filter, or page still fetches the latest server data.
+
+For Laravel 10, configure `BROADCAST_DRIVER=pusher`, `PUSHER_APP_ID`, `PUSHER_APP_KEY`, `PUSHER_APP_SECRET`, and `PUSHER_APP_CLUSTER` on the server. Use the hosted Pusher Channels service and allow its secure WebSocket connection from the desktop network. This integration uses synchronous broadcasts and does not require a queue worker. Deploy the new event, listener, provider mapping, API controller, API route, and channel authorization; rebuild any cached configuration/events/routes as part of deployment, then rebuild the desktop app.
+
+Run `node scripts/test-registration-updates.mjs` for mocked desktop subscription, authorization, batching, rate cap, reconnection, busy-work deferral, outage, and cleanup checks. Laravel `AdminApiTest` covers registration broadcasts, commit/rollback behavior, outages, authorization, and public configuration under PHP 8.3. Hosted Pusher delivery must still be verified in the deployed environment.

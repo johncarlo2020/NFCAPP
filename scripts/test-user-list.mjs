@@ -73,7 +73,7 @@ resolveOld(result(1)); await oldRequest;
 assert.equal(context.users.length, 0, 'Ignore old response even before debounce fires');
 respond = undefined; reply = result(2, 1, 1, 1); await flushSearch();
 assert.equal(context.users[0].id, 2);
-assert.equal(select('#refresh').disabled, false);
+assert.equal(context.loading, false);
 
 // A delayed old failure cannot replace a newer result or show a stale notice.
 let rejectOld;
@@ -89,7 +89,7 @@ await run('loadUsers()'); respond = undefined;
 assert.equal(context.page, 1); assert.equal(context.users[0].id, 4, 'Reload the last valid page after a result is removed');
 
 failure = new Error('Server unavailable'); await run('loadUsers()'); failure = undefined;
-assert.match(notices.at(-1)[0], /Could not refresh users.*Server unavailable/);
+assert.match(notices.at(-1)[0], /Could not load users.*Server unavailable/);
 assert.equal(context.users.length, 0); assert.equal(context.loading, false);
 reply = { ...result(5), counts: undefined }; await run('loadUsers()');
 assert.match(notices.at(-1)[0], /Update the server API/);
